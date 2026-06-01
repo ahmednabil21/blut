@@ -10,6 +10,8 @@ export function formatPythonSyncSuccessMessage(res: PythonSubscribersSyncResult)
 
 export type PythonSubscriptionStatusFilter = 'active' | 'expiring_soon' | 'expired';
 
+export type PythonConnectionStatusFilter = 'online' | 'offline';
+
 export interface PythonSubscriptionStatusOption {
   id: PythonSubscriptionStatusFilter;
   label_ar: string;
@@ -80,6 +82,11 @@ export function buildPythonSubscribersQueryParams(
 
   const subscriptionStatus = mapFrontendStatusToPythonSubscriptionStatus(params?.status);
   if (subscriptionStatus) out.subscription_status = subscriptionStatus;
+
+  const conn = (params?.connectionStatus ?? '').trim().toLowerCase();
+  if (conn === 'online' || conn === 'offline') {
+    out.connection_status = conn;
+  }
 
   const expirationDate = pickExpirationDateYmd(params ?? {});
   if (expirationDate) out.expiration_date = expirationDate;

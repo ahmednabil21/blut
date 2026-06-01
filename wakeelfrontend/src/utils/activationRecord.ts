@@ -133,7 +133,49 @@ export function formatActivationMethodAr(method?: string | null): string {
   if (!m) return '—';
   if (m === 'user_credit') return 'رصيد مستخدم';
   if (m === 'credit') return 'رصيد';
-  if (m === 'voucher') return 'قسيمة';
+  if (m === 'voucher') return 'تفعيل ساس';
   if (m === 'reward_points') return 'نقاط مكافأة';
   return method ?? '—';
+}
+
+function activationPackageName(
+  row: Pick<RenewalReceipt, 'newProfileName' | 'profileName' | 'oldProfileName'>
+): string {
+  return (row.newProfileName ?? row.profileName ?? row.oldProfileName ?? '').trim();
+}
+
+function isOneDayPackageName(name: string): boolean {
+  return name.toUpperCase() === '1-DAY';
+}
+
+/** نص عمود «طريقة التفعيل» في صفحة التفعيلات */
+export function getActivationMethodDisplayLabel(
+  row: Pick<
+    RenewalReceipt,
+    'activationMethod' | 'masterTypeLabel' | 'masterType' | 'newProfileName' | 'profileName' | 'oldProfileName'
+  >
+): string {
+  const method = (row.activationMethod ?? '').trim().toLowerCase();
+  if (method === 'voucher') return 'تفعيل ساس';
+  if (isOneDayPackageName(activationPackageName(row))) return 'تمديد يوم';
+  const master = row.masterTypeLabel?.trim();
+  if (master) return master;
+  return formatActivationMethodAr(row.activationMethod);
+}
+
+export function getActivationMethodDisplayBadgeClass(
+  row: Pick<
+    RenewalReceipt,
+    'activationMethod' | 'masterTypeLabel' | 'masterType' | 'newProfileName' | 'profileName' | 'oldProfileName'
+  >,
+  label?: string
+): string {
+  const display = label ?? getActivationMethodDisplayLabel(row);
+  if (display === 'تفعيل ساس') {
+    return 'bg-sky-100 text-sky-800 border border-sky-200 dark:bg-sky-900/35 dark:text-sky-200 dark:border-sky-800';
+  }
+  if (display === 'تمديد يوم') {
+    return 'bg-amber-100 text-amber-900 border border-amber-200 dark:bg-amber-900/35 dark:text-amber-100 dark:border-amber-800';
+  }
+  return getMasterTypeBadgeClass(row.masterType, row.masterTypeLabel);
 }

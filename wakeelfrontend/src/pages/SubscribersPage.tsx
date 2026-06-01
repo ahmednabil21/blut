@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { apiService, ApiService, defaultSubscriberNoteTypeOptions } from '../services/api';
 import {
@@ -38,11 +38,13 @@ import {
   isActivateMissingSubscriberError,
   isActivateSuccessResponse,
 } from '../utils/activateApiErrors';
+import { subscriberConnectionRowClass } from '../utils/subscriberOnlineStatus';
+import { packageIsActivatable, parseActivatePackageSelection } from '../utils/activatePackages';
 import {
-  formatActivateSeriesOptionLabel,
-  seriesIsActivatableOnSas,
-  seriesSasAvailableCount,
-} from '../utils/activateSeries';
+  detectSasPricingHost,
+  resolvePackageSalePrice,
+} from '../utils/activatePackagePricing';
+import { PythonActivateWizard } from '../components/activation/PythonActivateWizard';
 import {
   daysUntilExpiration,
   calendarDaysBetween,
@@ -90,6 +92,7 @@ import {
   Download,
   ArrowUp,
   ArrowDown,
+  CalendarPlus,
 } from 'lucide-react';
 
 const SUBSCRIBERS_TABLE_COLUMNS: { id: string; label: string }[] = [
@@ -108,6 +111,8 @@ const SUBSCRIBERS_TABLE_COLUMNS: { id: string; label: string }[] = [
   { id: 'daysRemaining', label: 'الأيام المتبقية' },
   { id: 'status', label: 'الحالة' },
 ];
+
+type ConnectionStatusFilter = 'all' | 'online' | 'offline';
 
 function getSubscriberSortValue(
   subscriber: Subscriber,
@@ -322,6 +327,8 @@ const SubscribersPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<SubscriptionStatus | 'all'>('all');
+  const [connectionStatusFilter, setConnectionStatusFilter] =
+    useState<ConnectionStatusFilter>('all');
   const [sortColumn, setSortColumn] = useState<string>('expirationDate');
   const [sortDescending, setSortDescending] = useState<boolean>(true);
   const [maxDaysUntilExpiry, setMaxDaysUntilExpiry] = useState<string>('');
@@ -349,8 +356,9 @@ const SubscribersPage: React.FC = () => {
   const [appliedExpirationToDate, setAppliedExpirationToDate] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showRenewalModal, setShowRenewalModal] = useState(false);
-  const [activateCardPin, setActivateCardPin] = useState('');
-  const [activateSelectedSeries, setActivateSelectedSeries] = useState('');
+  /** مفتاح الباقة من GET /activate/packages (id:123 أو name:NOVA) */
+  const [activateSelectedPackageKey, setActivateSelectedPackageKey] = useState('');
+  const [pythonActivateStep, setPythonActivateStep] = useState<1 | 2>(1);
   /** رسيلر مثبّت عند فتح مودال التفعيل (X-Reseller-Id + select) */
   const [activateModalResellerId, setActivateModalResellerId] = useState('');
   /** مودال التفعيل — واصل: المبلغ كاملاً (افتراضي) */
@@ -497,8 +505,23 @@ const SubscribersPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(10);
 
-  const { data: subscribersResponse, error, isLoading } = useQuery<PaginatedResponse<Subscriber>>({
-    queryKey: ['subscribers', 'offline', online, currentPage, pageSize, debouncedSearchTerm, statusFilter, sortDescending, appliedMaxDaysUntilExpiry, appliedFatFilter, appliedZoneFilter, appliedNoteTypeFilter, appliedExtensionActivationFilter, appliedExpirationFromDate, appliedExpirationToDate, selectedOperationalResellerId],
+  const {
+    data: subscribersResponse,
+    error,
+    isLoading,
+    isFetching: subscribersFetching,
+  } = useQuery<PaginatedResponse<Subscriber>>({
+    queryKey: ['subscribers', 'offline', online, currentPage, pageSize, debouncedSearchTerm, statusFilter, connectionStatusFilter, sortDescending, appliedMaxDaysUntilExpiry, appliedFatFilter, appliedZoneFilter, appliedNoteTypeFilter, appliedExtensionActivationFilter, appliedExpirationFromDate, appliedExpirationToDate, selectedOperationalResellerId],
+    placeholderData: keepPreviousData,
+    refetchInterval: (query) => {
+      if (!isPythonBackend() || !online) return false;
+      const bg = query.state.data?.backgroundSync;
+      if (bg?.in_progress) return 2500;
+      if ((query.state.data?.totalItems ?? 0) === 0 && (bg?.scheduled || bg?.stale)) {
+        return 2500;
+      }
+      return false;
+    },
     queryFn: async () => {
       const daysNum = appliedMaxDaysUntilExpiry.trim() === '' ? undefined : parseInt(appliedMaxDaysUntilExpiry, 10);
       const noteTypeNum =
@@ -526,6 +549,10 @@ const SubscribersPage: React.FC = () => {
         pageSize: pageSize,
         search: effectiveSearch,
         status: statusFilter !== 'all' ? statusFilter.toString() : undefined,
+        connectionStatus:
+          isPythonBackend() && connectionStatusFilter !== 'all'
+            ? connectionStatusFilter
+            : undefined,
         sortDescending: sortDescending,
         maxDaysUntilExpiry: daysNum !== undefined && !isNaN(daysNum) && daysNum >= 0 ? daysNum : undefined,
         fat: appliedFatFilter.trim() || undefined,
@@ -568,100 +595,80 @@ const SubscribersPage: React.FC = () => {
   const pythonActivateResellerId = activateModalResellerId.trim();
 
   const {
-    data: activateModes,
-    isLoading: activateModesLoading,
-    error: activateModesError,
+    data: activatePackagesBundle,
+    isLoading: activatePackagesLoading,
+    error: activatePackagesError,
   } = useQuery({
-    queryKey: ['activate-modes', pythonActivateResellerId],
-    queryFn: () => apiService.getActivateModes(),
-    enabled: showRenewalModal && isPythonBackend() && !!pythonActivateResellerId,
-    retry: false,
-  });
-
-  const activateModeConfig = activateModes?.config;
-  const isAdminDirectActivation =
-    activateModeConfig?.activation_mode === 'admin_direct';
-
-  const {
-    data: activateSeriesBundle,
-    isLoading: activateSeriesLoading,
-    error: activateSeriesError,
-  } = useQuery({
-    queryKey: [
-      'activate-series',
-      pythonActivateResellerId,
-      activateUsername,
-      activateProfileName,
-      activateProfileId,
-    ],
+    queryKey: ['activate-packages', pythonActivateResellerId, activateUsername],
     queryFn: () =>
-      apiService.getActivateSeries({
+      apiService.getActivatePackages({
         username: activateUsername,
-        profileName: activateProfileName || undefined,
-        profileId: activateProfileId || undefined,
+        live: false,
       }),
     enabled:
       showRenewalModal && isPythonBackend() && !!pythonActivateResellerId && !!activateUsername,
     retry: false,
   });
 
-  const activateSeriesList = useMemo(
-    () => activateSeriesBundle?.series ?? [],
-    [activateSeriesBundle?.series]
+  const activatePackagesList = useMemo(
+    () => activatePackagesBundle?.packages ?? [],
+    [activatePackagesBundle?.packages]
   );
-  const selectedActivateSeriesRow = useMemo(
-    () => activateSeriesList.find((s) => s.series === activateSelectedSeries),
-    [activateSeriesList, activateSelectedSeries]
+  const selectedActivatePackage = useMemo(
+    () =>
+      activatePackagesList.find((p) => p.package_key === activateSelectedPackageKey) ?? null,
+    [activatePackagesList, activateSelectedPackageKey]
   );
-  const selectedSeriesActivatableOnSas = seriesIsActivatableOnSas(selectedActivateSeriesRow);
-  const activatableSeriesCount = useMemo(
-    () => activateSeriesList.filter((s) => seriesIsActivatableOnSas(s)).length,
-    [activateSeriesList]
+  const selectedPackageActivatable = packageIsActivatable(selectedActivatePackage);
+  const pythonActivateReseller = useMemo(
+    () => myResellers.find((r) => r.id === pythonActivateResellerId),
+    [myResellers, pythonActivateResellerId]
   );
 
-  const {
-    data: activateCardCodesResponse,
-    isLoading: activateCardCodesLoading,
-    isFetching: activateCardCodesFetching,
-    refetch: refetchActivateCardCodes,
-    error: activateCardCodesError,
-  } = useQuery({
-    queryKey: ['activate-card-codes', pythonActivateResellerId, activateSelectedSeries],
-    queryFn: () =>
-      apiService.getCardCodes(activateSelectedSeries, {
-        page: 1,
-        perPage: 50,
-        unusedOnly: true,
-      }),
-    enabled:
-      showRenewalModal &&
-      isPythonBackend() &&
-      !!pythonActivateResellerId &&
-      !!activateSelectedSeries &&
-      selectedSeriesActivatableOnSas,
-    retry: false,
-  });
+  const pythonPackagePrice = useMemo(
+    () =>
+      resolvePackageSalePrice(
+        selectedActivatePackage?.profile_name,
+        detectSasPricingHost(pythonActivateReseller?.baseUrl)
+      ),
+    [selectedActivatePackage?.profile_name, pythonActivateReseller?.baseUrl]
+  );
 
-  const activateCardCodes = activateCardCodesResponse?.data ?? [];
+  const handlePythonSelectPackage = (packageKey: string) => {
+    const pkg = activatePackagesList.find((p) => p.package_key === packageKey);
+    if (!pkg || !packageIsActivatable(pkg)) return;
 
-  useEffect(() => {
-    if (!showRenewalModal || !isPythonBackend()) return;
-    const list = activateSeriesBundle?.series ?? [];
-    if (!list.length) return;
-    const rec = activateSeriesBundle?.recommended_series?.trim();
-    setActivateSelectedSeries((prev) => {
-      if (prev && list.some((s) => s.series === prev && seriesIsActivatableOnSas(s))) {
-        return prev;
-      }
-      if (rec) {
-        const recRow = list.find((s) => s.series === rec);
-        if (recRow && seriesIsActivatableOnSas(recRow)) return rec;
-      }
-      const firstOk = list.find((s) => seriesIsActivatableOnSas(s));
-      return firstOk?.series ?? '';
-    });
-    setActivateCardPin('');
-  }, [showRenewalModal, activateSeriesBundle]);
+    const price = resolvePackageSalePrice(
+      pkg.profile_name,
+      detectSasPricingHost(pythonActivateReseller?.baseUrl)
+    );
+    if (price == null) {
+      showError('الباقة', `لا يوجد سعر معرّف لـ «${pkg.profile_name ?? ''}»`);
+      return;
+    }
+
+    setActivateSelectedPackageKey(packageKey);
+    setRenewalData((prev) => ({
+      ...prev,
+      overrideSalePrice: price,
+      amountPaid: price,
+      remainingAmount: 0,
+      debtDueDate: '',
+    }));
+    setAmountReceivedInFull(true);
+    setPythonActivateStep(2);
+  };
+
+  const handlePythonAmountPaidChange = (value: number) => {
+    const price = pythonPackagePrice ?? renewalData.overrideSalePrice ?? 0;
+    const paid = Math.max(0, Math.min(price, value));
+    setRenewalData((prev) => ({
+      ...prev,
+      amountPaid: paid,
+      remainingAmount: Math.max(0, price - paid),
+    }));
+    setAmountReceivedInFull(paid >= price);
+  };
 
   const { data: profilesResponse } = useQuery({
     queryKey: ['profiles', 'all', online, selectedOperationalResellerId],
@@ -1662,25 +1669,11 @@ const SubscribersPage: React.FC = () => {
     setShowRenewalModal(false);
     setRenewalViaSasTab(false);
     setShowOtherDealerTopUpModal(false);
-    setActivateSelectedSeries('');
-    setActivateCardPin('');
+    setActivateSelectedPackageKey('');
+    setPythonActivateStep(1);
     setActivateModalResellerId('');
     setAmountReceivedInFull(true);
   };
-
-  const activateCodesSyncMutation = useMutation({
-    mutationFn: (series: string) =>
-      apiService.syncCardCodes(series, { unusedOnly: true, full: false }),
-    onSuccess: (res) => {
-      showSuccess(
-        'مزامنة الأكواد',
-        `سلسلة ${res.series}: جديد ${res.created}، محدَّث ${res.updated}`
-      );
-      void refetchActivateCardCodes();
-      void queryClient.invalidateQueries({ queryKey: ['activate-series'] });
-    },
-    onError: (err: unknown) => showError('مزامنة الأكواد', ApiService.showError(err)),
-  });
 
   const openPythonActivateModal = async (subscriber: Subscriber, resellerId?: string) => {
     const rid = resolveSubscriberActivateResellerId(subscriber, {
@@ -1697,8 +1690,8 @@ const SubscribersPage: React.FC = () => {
 
     setSelectedSubscriberForRenewal(subscriber);
     setRenewalViaSasTab(false);
-    setActivateSelectedSeries('');
-    setActivateCardPin('');
+    setActivateSelectedPackageKey('');
+    setPythonActivateStep(1);
     setActivateModalResellerId(rid);
     setAmountReceivedInFull(true);
     setRenewalData((prev) => ({
@@ -1718,39 +1711,90 @@ const SubscribersPage: React.FC = () => {
     }
     setShowRenewalModal(true);
     void queryClient.invalidateQueries({ queryKey: ['activate-modes', rid] });
-    void queryClient.invalidateQueries({ queryKey: ['activate-series'] });
+    void queryClient.invalidateQueries({ queryKey: ['activate-packages'] });
   };
 
-  const handleActivateCodesSyncPrompt = async () => {
-    if (!activateSelectedSeries) return;
-    const seriesRow = selectedActivateSeriesRow;
-    if (!seriesIsActivatableOnSas(seriesRow)) {
-      showError(
-        'مزامنة الأكواد',
-        'هذه السلسلة بلا أكواد متاحة على SAS. المزامنة لا تغيّر أن الأكواد مستخدمة على الشبكة — اختر سلسلة أخرى.'
-      );
-      return;
-    }
-    const unused = seriesRow?.unused_in_db ?? 0;
-    const ok = await confirmAction(
-      'التحقق والمزامنة',
-      unused === 0
-        ? `لا توجد أكواد غير مستخدمة محلياً لسلسلة «${activateSelectedSeries}». هل تريد جلب الأكواد من SAS؟`
-        : `هل تريد إعادة مزامنة أكواد سلسلة «${activateSelectedSeries}» من SAS؟`
-    );
-    if (!ok) return;
-    activateCodesSyncMutation.mutate(activateSelectedSeries);
-  };
+  const extendDayTargetSubscriber = useMemo(() => {
+    if (!isPythonBackend() || selectedIds.length !== 1) return null;
+    return subscribers?.find((s) => s.id === selectedIds[0]) ?? null;
+  }, [selectedIds, subscribers]);
+
+  const extendDayResellerId = useMemo(() => {
+    const sub = extendDayTargetSubscriber;
+    if (!sub) return '';
+    return resolveSubscriberActivateResellerId(sub, {
+      operationalResellerId: selectedOperationalResellerId,
+    });
+  }, [extendDayTargetSubscriber, selectedOperationalResellerId]);
+
+  const extendDayUsername = useMemo(() => {
+    const sub = extendDayTargetSubscriber;
+    if (!sub) return '';
+    return (sub.username ?? sub.deviceUsername ?? '').trim();
+  }, [extendDayTargetSubscriber]);
+
+  const { data: extendDayStatus, isLoading: extendDayStatusLoading } = useQuery({
+    queryKey: ['extend-day-status', extendDayResellerId, extendDayUsername],
+    queryFn: async () => {
+      if (extendDayResellerId) {
+        setSelectedResellerId(extendDayResellerId);
+        await apiService.selectApiReseller(extendDayResellerId);
+      }
+      const sub = extendDayTargetSubscriber!;
+      const sasId = parseInt(String(sub.id), 10);
+      return apiService.getExtendDayStatus({
+        username: extendDayUsername,
+        sasUserId: Number.isFinite(sasId) ? sasId : undefined,
+      });
+    },
+    enabled:
+      isPythonBackend() &&
+      !!extendDayTargetSubscriber &&
+      !!extendDayUsername &&
+      !!extendDayResellerId,
+    staleTime: 30_000,
+  });
+
+  const extendDayMutation = useMutation({
+    mutationFn: async () => {
+      if (!extendDayStatus?.can_execute) {
+        throw new Error(extendDayStatus?.message_ar ?? 'لا يمكن تنفيذ التمديد');
+      }
+      if (extendDayResellerId) {
+        setSelectedResellerId(extendDayResellerId);
+        await apiService.selectApiReseller(extendDayResellerId);
+      }
+      const sub = extendDayTargetSubscriber!;
+      const sasId = parseInt(String(sub.id), 10);
+      return apiService.executeExtendDay({
+        username: extendDayUsername,
+        sasUserId: Number.isFinite(sasId) ? sasId : undefined,
+      });
+    },
+    onSuccess: (res) => {
+      showSuccess('تمديد', res.message?.trim() || 'تم تمديد المشترك يوماً واحداً');
+      void queryClient.invalidateQueries({ queryKey: ['extend-day-status'] });
+      void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
+    },
+    onError: (err: unknown) => {
+      showError('تمديد', ApiService.showError(err));
+    },
+  });
 
   const pythonActivateMutation = useMutation({
     mutationFn: async () => {
       const username = activateUsername;
       if (!username) throw new Error('اسم المستخدم غير متوفر');
-      if (!activateSelectedSeries.trim()) throw new Error('اختر سلسلة الكارد');
+      if (!activateSelectedPackageKey.trim()) throw new Error('اختر الباقة');
+      const { profileId, profileName } = parseActivatePackageSelection(
+        activateSelectedPackageKey
+      );
+      const pkg = selectedActivatePackage;
       return apiService.activateSubscriber({
         username,
-        card_pin: activateCardPin,
-        series: activateSelectedSeries,
+        profile_id: profileId ?? pkg?.profile_id,
+        profile_name: profileName ?? pkg?.profile_name,
+        sync_codes: true,
         mock: false,
       });
     },
@@ -1764,16 +1808,11 @@ const SubscribersPage: React.FC = () => {
         );
         return;
       }
-      const modeLabel = activateModeConfig?.display_name_ar?.trim();
       const sasOk = getActivateSasResponseMessage(res);
       showSuccess(
         'تم التفعيل',
         res.message?.trim() ||
-          (sasOk === 'rsp_success'
-            ? 'تم التفعيل بنجاح (rsp_success)'
-            : modeLabel
-              ? `تم التفعيل — ${modeLabel}`
-              : 'تم تفعيل الكارد بنجاح')
+          (sasOk === 'rsp_success' ? 'تم التفعيل بنجاح' : 'تم تفعيل الكارد بنجاح')
       );
       void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
       void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
@@ -1884,6 +1923,7 @@ const SubscribersPage: React.FC = () => {
     setExpirationToDate('');
     setAppliedExpirationFromDate('');
     setAppliedExpirationToDate('');
+    setConnectionStatusFilter('all');
     setCurrentPage(1);
   };
 
@@ -1921,7 +1961,7 @@ const SubscribersPage: React.FC = () => {
   const hasActiveAdvancedFilter =
     appliedExpirationFromDate !== '' || appliedExpirationToDate !== '' ||
     appliedMaxDaysUntilExpiry !== '' || appliedFatFilter !== '' || appliedZoneFilter !== '' ||
-    appliedNoteTypeFilter !== 'all' || appliedExtensionActivationFilter || (debouncedSearchTerm?.trim() ?? '') !== '' || statusFilter !== 'all';
+    appliedNoteTypeFilter !== 'all' || appliedExtensionActivationFilter || (debouncedSearchTerm?.trim() ?? '') !== '' || statusFilter !== 'all' || connectionStatusFilter !== 'all';
 
   useEffect(() => {
     if (showAdvancedFilter) {
@@ -2166,25 +2206,16 @@ const SubscribersPage: React.FC = () => {
       showError('المشترك', 'اسم المستخدم غير متوفر لهذا المشترك.');
       return;
     }
-    if (!activateSelectedSeries.trim()) {
-      showError('السلسلة', 'اختر سلسلة كارد من القائمة.');
+    if (!activateSelectedPackageKey.trim()) {
+      showError('الباقة', 'اختر باقة من القائمة.');
       return;
     }
-    if (!selectedSeriesActivatableOnSas) {
-      showError(
-        'السلسلة',
-        'لا توجد أكواد متاحة على SAS لهذه السلسلة (مستخدمة على الشبكة). اختر سلسلة أخرى أو حدّث المخزون من SAS.'
-      );
+    if (!selectedPackageActivatable) {
+      showError('الباقة', 'لا يوجد مخزون متاح لهذه الباقة.');
       return;
     }
-    const pin = activateCardPin.trim();
-    if (!pin) {
-      showError('كود التفعيل', 'اختر كوداً من القائمة أو أدخل PIN.');
-      return;
-    }
-    const remaining = renewalData.remainingAmount || 0;
-    if (remaining > 0 && !(renewalData.debtDueDate || '').toString().trim()) {
-      showError('خطأ', 'يرجى اختيار تاريخ الاستحقاق عند وجود مبلغ متبقي (غير واصل).');
+    if (pythonPackagePrice == null) {
+      showError('الباقة', 'لا يوجد سعر معرّف لهذه الباقة.');
       return;
     }
 
@@ -2849,18 +2880,16 @@ const SubscribersPage: React.FC = () => {
     );
   }
 
-  if (isLoading || (isPythonBackend() && subscribersDbSyncMutation.isPending)) {
+  const subscribersInitialLoading = isLoading && !subscribersResponse;
+
+  if (subscribersInitialLoading) {
     return (
       <div className="p-6 flex items-center justify-center h-screen">
         <WifiLoaderComponent
           background="transparent"
           desktopSize="150px"
           mobileSize="150px"
-          text={
-            subscribersDbSyncMutation.isPending
-              ? 'مزامنة المشتركين من SAS...'
-              : 'تحميل المشتركين...'
-          }
+          text="تحميل المشتركين..."
           backColor="#E8F2FC"
           frontColor="#4645F6"
         />
@@ -2909,6 +2938,41 @@ const SubscribersPage: React.FC = () => {
         )}
 
         <div className="flex flex-wrap items-center gap-2">
+          {isPythonBackend() && extendDayTargetSubscriber && (
+            <button
+              type="button"
+              title={extendDayStatus?.message_ar ?? 'تمديد يوم واحد (1-DAY)'}
+              disabled={
+                extendDayStatusLoading ||
+                extendDayMutation.isPending ||
+                extendDayStatus?.button_disabled !== false
+              }
+              onClick={() => {
+                if (!extendDayStatus?.can_execute) {
+                  showInfo(
+                    'تمديد',
+                    extendDayStatus?.message_ar ?? 'غير متاح — ربما استُخدم التمديد هذا الشهر'
+                  );
+                  return;
+                }
+                extendDayMutation.mutate();
+              }}
+              className={`flex items-center gap-2 px-3 py-2.5 sm:px-4 sm:py-2 rounded-lg text-sm sm:text-base text-white transition-colors min-h-[44px] touch-manipulation disabled:cursor-not-allowed ${
+                extendDayStatusLoading
+                  ? 'bg-gray-500 opacity-70'
+                  : extendDayStatus?.button_color === 'green'
+                    ? 'bg-green-600 hover:bg-green-700 disabled:opacity-50'
+                    : 'bg-red-600 hover:bg-red-700 disabled:opacity-80'
+              }`}
+            >
+              <CalendarPlus className="h-4 w-4 shrink-0" />
+              <span>
+                {extendDayMutation.isPending || extendDayStatusLoading
+                  ? 'جاري الفحص...'
+                  : 'تمديد'}
+              </span>
+            </button>
+          )}
           <div className="relative" ref={dropdownRef}>
             <button
               type="button"
@@ -2935,6 +2999,35 @@ const SubscribersPage: React.FC = () => {
                     <RefreshCw className="h-4 w-4" />
                     <span>تفعيل المشترك</span>
                   </button>
+                  )}
+                  {isPythonBackend() && selectedIds.length === 1 && extendDayTargetSubscriber && (
+                    <button
+                      onClick={() => {
+                        if (!extendDayStatus?.can_execute) {
+                          showInfo(
+                            'تمديد',
+                            extendDayStatus?.message_ar ?? 'غير متاح'
+                          );
+                          setShowActionsDropdown(false);
+                          return;
+                        }
+                        extendDayMutation.mutate();
+                        setShowActionsDropdown(false);
+                      }}
+                      disabled={
+                        extendDayStatusLoading ||
+                        extendDayMutation.isPending ||
+                        extendDayStatus?.button_disabled !== false
+                      }
+                      className={`w-full text-right px-4 py-2 text-sm flex items-center space-x-2 ${
+                        extendDayStatus?.button_color === 'green'
+                          ? 'text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20'
+                          : 'text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                      } disabled:opacity-50`}
+                    >
+                      <CalendarPlus className="h-4 w-4" />
+                      <span>تمديد يوم</span>
+                    </button>
                   )}
                   {selectedIds.length === 1 && showActivateViaTabAction && (
                     <button
@@ -3153,10 +3246,32 @@ const SubscribersPage: React.FC = () => {
           </button>
         </div>
 
-        {isPythonBackend() && lastSubscribersSyncedAt && (
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            آخر مزامنة من SAS: {formatDate(lastSubscribersSyncedAt, { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-            {subscribersResponse?.source === 'database' ? ' (من قاعدة البيانات)' : ''}
+        {isPythonBackend() && (
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 flex flex-wrap items-center gap-2">
+            {lastSubscribersSyncedAt ? (
+              <span>
+                آخر مزامنة من SAS:{' '}
+                {formatDate(lastSubscribersSyncedAt, {
+                  year: 'numeric',
+                  month: 'numeric',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            ) : (
+              <span>لم تُجرَ مزامنة SAS بعد</span>
+            )}
+            {subscribersResponse?.source === 'database' ? (
+              <span className="text-gray-400">(من قاعدة البيانات)</span>
+            ) : null}
+            {subscribersFetching &&
+            (subscribersResponse?.backgroundSync?.in_progress ||
+              subscribersDbSyncMutation.isPending) ? (
+              <span className="text-primary-600 dark:text-primary-400 animate-pulse">
+                تحديث من SAS في الخلفية…
+              </span>
+            ) : null}
           </p>
         )}
 
@@ -3164,7 +3279,7 @@ const SubscribersPage: React.FC = () => {
           <div className="mt-3 p-4 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-lg">
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
               {isPythonBackend()
-                ? 'القائمة من قاعدة البيانات بعد المزامنة. الفلاتر: الحالة، تاريخ الانتهاء، الاسم، اسم المستخدم، الهاتف، أو معرّف المشترك.'
+                ? 'القائمة من قاعدة البيانات بعد المزامنة. الفلاتر: حالة الاشتراك، حالة الاتصال (أونلاين/أوفلاين)، تاريخ الانتهاء، الاسم، اسم المستخدم، الهاتف، أو معرّف المشترك.'
                 : 'الحالة، الكابينة، المنطقة، نوع الملاحظة، ترتيب التاريخ، الأيام حتى الانتهاء، ونطاق تاريخ انتهاء الاشتراك.'}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -3206,6 +3321,25 @@ const SubscribersPage: React.FC = () => {
                 )}
             </select>
           </div>
+              {isPythonBackend() && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    حالة الاتصال
+                  </label>
+                  <select
+                    value={connectionStatusFilter}
+                    onChange={(e) => {
+                      setConnectionStatusFilter(e.target.value as ConnectionStatusFilter);
+                      setCurrentPage(1);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white text-sm"
+                  >
+                    <option value="all">الكل (أونلاين + أوفلاين)</option>
+                    <option value="online">متصل (أونلاين)</option>
+                    <option value="offline">غير متصل (أوفلاين)</option>
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">ترتيب التاريخ</label>
                 <select
@@ -3356,6 +3490,14 @@ const SubscribersPage: React.FC = () => {
         </button>
       </div>
 
+      {isPythonBackend() && (
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
+          
+        
+       
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="flex items-center justify-end px-3 py-2 border-b border-gray-200 dark:border-gray-700">
@@ -3439,9 +3581,10 @@ const SubscribersPage: React.FC = () => {
               {sortedSubscribers?.map((subscriber) => (
                 <tr
                   key={subscriber.id}
-                  className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${
-                    subscriberIdsWithOverdueDebt.has(subscriber.id) ? 'bg-red-50 dark:bg-red-900/20' : ''
-                  }`}
+                  className={subscriberConnectionRowClass(subscriber, {
+                    isPython: isPythonBackend(),
+                    hasOverdueDebt: subscriberIdsWithOverdueDebt.has(subscriber.id),
+                  })}
                 >
                   <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-4">
                     <button onClick={() => toggleSelectOne(subscriber.id)} className="p-1" aria-label="تحديد">
@@ -3910,14 +4053,23 @@ const SubscribersPage: React.FC = () => {
                   <h2
                     className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white tracking-tight truncate"
                     title={
-                      (renewalInfo?.subscriberName || selectedSubscriberForRenewal?.fullName || '').trim() ||
-                      undefined
+                      isPythonBackend()
+                        ? activateUsername || undefined
+                        : (renewalInfo?.subscriberName || selectedSubscriberForRenewal?.fullName || '').trim() ||
+                          undefined
                     }
                   >
-                    {(renewalInfo?.subscriberName || selectedSubscriberForRenewal?.fullName || '').trim() ||
-                      'تفعيل المشترك'}
+                    {isPythonBackend()
+                      ? activateUsername || selectedSubscriber?.fullName || 'تفعيل'
+                      : (renewalInfo?.subscriberName || selectedSubscriberForRenewal?.fullName || '').trim() ||
+                        'تفعيل المشترك'}
                   </h2>
-                  {daysUntilExpiryText && (
+                  {isPythonBackend() && (
+                    <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400 tabular-nums">
+                      {pythonActivateStep}/2
+                    </span>
+                  )}
+                  {!isPythonBackend() && daysUntilExpiryText && (
                     <span className="shrink-0 text-xs sm:text-sm font-medium text-amber-700 dark:text-amber-300 bg-amber-100/80 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-full px-2 py-0.5">
                       {daysUntilExpiryText}
                     </span>
@@ -3962,306 +4114,25 @@ const SubscribersPage: React.FC = () => {
               <form onSubmit={handleRenewalSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
                 <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4 min-h-0">
                   {isPythonBackend() && !pythonActivateResellerId && (
-                    <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-300">
-                      المشترك غير مربوط برسيلر — لا يمكن التفعيل. حدّث بيانات المشتركين أو اربط منطقة المشترك.
-                    </div>
-                  )}
-
-                  {isPythonBackend() && (
-                    <section className="rounded-xl border border-gray-200/90 dark:border-gray-600/70 overflow-hidden bg-white/60 dark:bg-gray-800/30">
-                      <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/80 bg-gray-50/90 dark:bg-gray-900/25">
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">المبالغ والدين</h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          مفتاح «واصل» مفعّل افتراضياً — عطّله لإدخال مبلغ واصل جزئي.
-                        </p>
-                      </div>
-                      <div className="p-3 sm:p-4 space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                            سعر الاشتراك (د.ع)
-                          </label>
-                          <input
-                            type="number"
-                            name="overrideSalePrice"
-                            value={renewalData.overrideSalePrice === 0 ? '' : renewalData.overrideSalePrice}
-                            onChange={handleRenewalInputChange}
-                            min="0"
-                            placeholder="اختياري"
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white max-w-xs"
-                          />
-                        </div>
-                        <div className="flex items-center justify-between gap-4 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50/80 dark:bg-gray-900/30 px-4 py-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-gray-900 dark:text-white">واصل</p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                              {amountReceivedInFull
-                                ? `المبلغ كاملاً — ${formatNumber(getRenewalFinalPrice(), { suffix: ' د.ع' })}`
-                                : 'أدخل المبلغ الواصل — الباقي يُسجَّل ديناً'}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={amountReceivedInFull}
-                            onClick={() => handleAmountReceivedToggle(!amountReceivedInFull)}
-                            className={`relative inline-flex h-8 w-[3.25rem] shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900 ${
-                              amountReceivedInFull ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
-                            }`}
-                          >
-                            <span
-                              className={`pointer-events-none inline-block h-7 w-7 rounded-full bg-white shadow-md ring-0 transition-transform duration-200 ease-in-out ${
-                                amountReceivedInFull
-                                  ? 'translate-x-[-1.35rem]'
-                                  : 'translate-x-0.5'
-                              }`}
-                            />
-                          </button>
-                        </div>
-                        {!amountReceivedInFull && (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                              ادخل مبلغ الواصل (د.ع)
-                            </label>
-                            <input
-                              type="number"
-                              name="amountPaid"
-                              value={renewalData.amountPaid === 0 ? '' : renewalData.amountPaid}
-                              onChange={handleRenewalInputChange}
-                              min="0"
-                              max={getRenewalFinalPrice()}
-                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white max-w-xs"
-                            />
-                          </div>
-                        )}
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                            مبلغ الدين <span className="text-gray-400 font-normal">(غير واصل)</span>
-                          </label>
-                          <input
-                            type="number"
-                            name="remainingAmount"
-                            value={renewalData.remainingAmount || 0}
-                            readOnly
-                            tabIndex={-1}
-                            className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800/80 text-gray-700 dark:text-gray-300 cursor-default max-w-xs"
-                          />
-                        </div>
-                        {(renewalData.remainingAmount || 0) > 0 && (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                              تاريخ الاستحقاق *
-                            </label>
-                            <input
-                              type="date"
-                              name="debtDueDate"
-                              value={renewalData.debtDueDate || ''}
-                              onChange={handleRenewalInputChange}
-                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white max-w-xs"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </section>
+                    <p className="text-sm text-red-600 dark:text-red-400 text-center py-4">لا يوجد رسيلر</p>
                   )}
 
                   {isPythonBackend() && pythonActivateResellerId && (
-                    <section className="rounded-xl border border-emerald-200/80 dark:border-emerald-800/70 overflow-hidden bg-white/60 dark:bg-gray-800/30">
-                      <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700/80 bg-emerald-50/80 dark:bg-emerald-950/25">
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">كود التفعيل (PIN)</h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          الباقة:{' '}
-                          <span className="font-medium text-gray-800 dark:text-gray-200">
-                            {activateSeriesBundle?.profile_match?.profile_name ||
-                              activateSeriesBundle?.subscriber?.profile_name ||
-                              selectedSubscriber?.profileName ||
-                              '—'}
-                          </span>
-                          {' '}
-                          — رسيلر:{' '}
-                          <span className="font-mono">
-                            {activateModes?.reseller_name ||
-                              myResellers.find((r) => r.id === pythonActivateResellerId)?.name ||
-                              pythonActivateResellerId}
-                          </span>
-                        </p>
-                      </div>
-                      <div className="p-3 sm:p-4 space-y-4">
-                        {activateModesLoading ? (
-                          <p className="text-sm text-gray-500 flex items-center gap-2">
-                            <RefreshCw className="h-4 w-4 animate-spin" />
-                            جاري تحميل إعدادات التفعيل…
-                          </p>
-                        ) : activateModesError ? (
-                          <p className="text-sm text-red-600 dark:text-red-400">
-                            {ApiService.showError(activateModesError)}
-                          </p>
-                        ) : activateModeConfig ? (
-                          <div
-                            className={`rounded-lg border p-3 text-sm ${
-                              isAdminDirectActivation
-                                ? 'border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-800 dark:bg-blue-900/25 dark:text-blue-100'
-                                : 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-900/25 dark:text-emerald-100'
-                            }`}
-                          >
-                            <p className="font-semibold">
-                              {activateModeConfig.display_name_ar ||
-                                (isAdminDirectActivation ? 'تفعيل عبر SAS أدمن' : 'بوابة المشترك')}
-                            </p>
-                            {activateModeConfig.description_ar && (
-                              <p className="text-xs mt-1 opacity-90">{activateModeConfig.description_ar}</p>
-                            )}
-                            {activateModeConfig.activations_history?.note_ar && (
-                              <p className="text-xs mt-2 opacity-90 border-t border-current/20 pt-2">
-                                {activateModeConfig.activations_history.note_ar}
-                              </p>
-                            )}
-                            
-                          </div>
-                        ) : null}
-                        {activateSeriesLoading ? (
-                          <p className="text-sm text-gray-500 flex items-center gap-2">
-                            <RefreshCw className="h-4 w-4 animate-spin" />
-                            جاري جلب سلاسل الكارد…
-                          </p>
-                        ) : activateSeriesError ? (
-                          <p className="text-sm text-red-600 dark:text-red-400">
-                            {ApiService.showError(activateSeriesError)}
-                          </p>
-                        ) : (
-                          <>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                                سلسلة الكارد *
-                              </label>
-                              <select
-                                value={activateSelectedSeries}
-                                onChange={(e) => {
-                                  setActivateSelectedSeries(e.target.value);
-                                  setActivateCardPin('');
-                                }}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm"
-                              >
-                                <option value="">— اختر السلسلة —</option>
-                                {(activateSeriesBundle?.series ?? []).map((s) => (
-                                  <option
-                                    key={s.series}
-                                    value={s.series}
-                                    disabled={!seriesIsActivatableOnSas(s)}
-                                  >
-                                    {formatActivateSeriesOptionLabel(s)}
-                                  </option>
-                                ))}
-                              </select>
-                              {activatableSeriesCount === 0 && activateSeriesList.length > 0 && (
-                                <p className="text-xs text-red-700 dark:text-red-300 mt-1">
-                                  كل السلاسل المعروضة بلا أكواد متاحة على SAS — لا يمكن التفعيل حتى يتوفر مخزون
-                                  غير مستخدم على الشبكة.
-                                </p>
-                              )}
-                              {activateSeriesBundle?.hint && (
-                                <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                                  {activateSeriesBundle.hint}
-                                </p>
-                              )}
-                            </div>
-
-                            {activateSelectedSeries && !selectedSeriesActivatableOnSas && (
-                              <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 space-y-1">
-                                <p className="text-sm font-medium text-red-900 dark:text-red-100">
-                                  لا توجد أكواد متاحة على SAS
-                                </p>
-                                <p className="text-xs text-red-800 dark:text-red-200">
-                                  السلسلة «{activateSelectedSeries}» — متاح على SAS:{' '}
-                                  {seriesSasAvailableCount(selectedActivateSeriesRow)}.
-                                  {Number(selectedActivateSeriesRow?.unused_in_db ?? 0) > 0
-                                    ? ` يوجد ${selectedActivateSeriesRow?.unused_in_db} كوداً محلياً لكنها مستخدمة على الشبكة ولا تُعرض للتفعيل.`
-                                    : ''}{' '}
-                                  اختر سلسلة أخرى من القائمة.
-                                </p>
-                              </div>
-                            )}
-
-                            {activateSelectedSeries && selectedSeriesActivatableOnSas && (
-                              <>
-                                {activateCardCodesLoading || activateCardCodesFetching ? (
-                                  <p className="text-sm text-gray-500 flex items-center gap-2">
-                                    <RefreshCw className="h-4 w-4 animate-spin" />
-                                    جاري جلب الأكواد من قاعدة البيانات…
-                                  </p>
-                                ) : activateCardCodesError ? (
-                                  <p className="text-sm text-red-600 dark:text-red-400">
-                                    {ApiService.showError(activateCardCodesError)}
-                                  </p>
-                                ) : activateCardCodes.length === 0 ? (
-                                  <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 space-y-2">
-                                    <p className="text-sm text-amber-900 dark:text-amber-200">
-                                      لا توجد أكواد غير مستخدمة محلياً لهذه السلسلة.
-                                    </p>
-                                    <button
-                                      type="button"
-                                      disabled={activateCodesSyncMutation.isPending}
-                                      onClick={() => void handleActivateCodesSyncPrompt()}
-                                      className="text-sm px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50"
-                                    >
-                                      {activateCodesSyncMutation.isPending
-                                        ? 'جاري المزامنة…'
-                                        : 'التحقق والمزامنة من SAS'}
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
-                                    {activateCardCodes.map((code: CardCode) => (
-                                      <button
-                                        key={`${code.id ?? code.pin}-${code.serialnumber ?? ''}`}
-                                        type="button"
-                                        onClick={() => setActivateCardPin(code.pin)}
-                                        className={`px-3 py-2 rounded-lg border font-mono text-sm transition-colors ${
-                                          activateCardPin === code.pin
-                                            ? 'border-emerald-600 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-100'
-                                            : 'border-gray-300 dark:border-gray-600 hover:border-emerald-400 bg-white dark:bg-gray-800'
-                                        }`}
-                                        title={code.serialnumber ?? ''}
-                                      >
-                                        {code.pin}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-
-                                {activateCardCodes.length > 0 && (
-                                  <button
-                                    type="button"
-                                    disabled={
-                                      activateCardCodesLoading ||
-                                      activateCodesSyncMutation.isPending
-                                    }
-                                    onClick={() => void refetchActivateCardCodes()}
-                                    className="text-xs text-emerald-700 dark:text-emerald-300 underline"
-                                  >
-                                    إعادة تحميل الأكواد من DB
-                                  </button>
-                                )}
-                              </>
-                            )}
-
-                            {selectedSeriesActivatableOnSas && (
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                                  كود التفعيل (PIN) *
-                                </label>
-                                <input
-                                  type="text"
-                                  readOnly
-                                  value={activateCardPin}
-                                  placeholder="اضغط على كود من الأعلى"
-                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg font-mono bg-gray-50 dark:bg-gray-900/50 dark:text-white"
-                                />
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </section>
+                    <PythonActivateWizard
+                      step={pythonActivateStep}
+                      packages={activatePackagesList}
+                      packagesLoading={activatePackagesLoading}
+                      packagesError={activatePackagesError}
+                      selectedPackageKey={activateSelectedPackageKey}
+                      selectedPackage={selectedActivatePackage}
+                      packagePrice={pythonPackagePrice}
+                      amountPaid={renewalData.amountPaid ?? 0}
+                      onSelectPackage={handlePythonSelectPackage}
+                      onAmountPaidChange={handlePythonAmountPaidChange}
+                      onBack={() => setPythonActivateStep(1)}
+                      formatNumber={formatNumber}
+                      showError={(err) => ApiService.showError(err)}
+                    />
                   )}
 
                   {!isPythonBackend() && (
@@ -4640,36 +4511,38 @@ const SubscribersPage: React.FC = () => {
                   >
                     إلغاء
                   </button>
-                  <button
-                    type="submit"
-                    disabled={
-                      isPythonBackend()
-                        ? pythonActivateMutation.isPending ||
-                          activateCodesSyncMutation.isPending ||
-                          !selectedSeriesActivatableOnSas ||
-                          !activateCardPin.trim()
-                        : createRenewalMutation.isPending
-                    }
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed min-w-[140px]"
-                  >
-                    {(isPythonBackend()
-                      ? pythonActivateMutation.isPending
-                      : createRenewalMutation.isPending) ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                        جاري التفعيل...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="h-4 w-4" />
-                        {isPythonBackend()
-                          ? 'تفعيل'
-                          : renewalViaSasTab
-                            ? 'تم التفعيل'
-                            : 'تفعيل المشترك'}
-                      </>
-                    )}
-                  </button>
+                  {(!isPythonBackend() || pythonActivateStep === 2) && (
+                    <button
+                      type="submit"
+                      disabled={
+                        isPythonBackend()
+                          ? pythonActivateMutation.isPending ||
+                            !selectedPackageActivatable ||
+                            !activateSelectedPackageKey.trim() ||
+                            pythonPackagePrice == null
+                          : createRenewalMutation.isPending
+                      }
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed min-w-[140px]"
+                    >
+                      {(isPythonBackend()
+                        ? pythonActivateMutation.isPending
+                        : createRenewalMutation.isPending) ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                          جاري التفعيل...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="h-4 w-4" />
+                          {isPythonBackend()
+                            ? 'تفعيل'
+                            : renewalViaSasTab
+                              ? 'تم التفعيل'
+                              : 'تفعيل المشترك'}
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               </form>
             )}

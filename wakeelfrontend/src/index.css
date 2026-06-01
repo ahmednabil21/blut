@@ -88,8 +88,20 @@
     @apply border-s border-gray-300 dark:border-gray-500;
   }
 
-  :where(#root) table:not(.table-plain) tbody tr {
+  :where(#root) table:not(.table-plain) tbody tr:not(.subscriber-row-online):not(.subscriber-row-offline) {
     @apply border-b border-gray-200 transition-colors odd:bg-white even:bg-gray-50/90 hover:bg-primary-50/70 dark:border-gray-700 dark:odd:bg-gray-800/30 dark:even:bg-gray-900/25 dark:hover:bg-primary-900/30;
+  }
+
+  :where(#root) table:not(.table-plain) tbody tr.subscriber-row-online {
+    @apply border-b border-gray-200 bg-green-50 hover:bg-green-100/90 dark:border-gray-700 dark:bg-green-900/25 dark:hover:bg-green-900/40;
+  }
+
+  :where(#root) table:not(.table-plain) tbody tr.subscriber-row-offline {
+    @apply border-b border-gray-200 bg-red-50 hover:bg-red-100/90 dark:border-gray-700 dark:bg-red-900/25 dark:hover:bg-red-900/40;
+  }
+
+  :where(#root) table:not(.table-plain) tbody tr.subscriber-row-overdue-debt {
+    @apply ring-1 ring-inset ring-amber-400 dark:ring-amber-600;
   }
 
   :where(#root) table:not(.table-plain) tbody td:not(:first-child) {

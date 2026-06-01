@@ -15,7 +15,8 @@ import { isPythonBackend } from '../config/apiConfig';
 import { fetchReceiptsWithCache } from '../services/offlineSync';
 import {
   formatActivationMethodAr,
-  getMasterTypeBadgeClass,
+  getActivationMethodDisplayBadgeClass,
+  getActivationMethodDisplayLabel,
   mapActivationToRenewalReceipt,
   sortActivationRecordsNewestFirst,
 } from '../utils/activationRecord';
@@ -58,8 +59,11 @@ const ReceiptsPage: React.FC = () => {
   const [appliedMasterType, setAppliedMasterType] = useState('');
   const [activationMethodFilter, setActivationMethodFilter] = useState('');
   const [appliedActivationMethod, setAppliedActivationMethod] = useState('');
+  const [subscriberNameFilter, setSubscriberNameFilter] = useState('');
+  const [subscriberUsernameFilter, setSubscriberUsernameFilter] = useState('');
+  const [appliedSubscriberName, setAppliedSubscriberName] = useState('');
+  const [appliedSubscriberUsername, setAppliedSubscriberUsername] = useState('');
   const [showFiltersModal, setShowFiltersModal] = useState(false);
-  const [sasRequestBody, setSasRequestBody] = useState<Record<string, unknown> | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const pythonBackend = isPythonBackend();
   const [selectedOperationalResellerId, setSelectedOperationalResellerId] = useState<string>('');
@@ -142,6 +146,8 @@ const ReceiptsPage: React.FC = () => {
       pythonBackend ? null : appliedToDate || null,
       selectedOperationalResellerId || null,
       appliedSearchTerm || null,
+      appliedSubscriberName || null,
+      appliedSubscriberUsername || null,
       appliedMasterType || null,
       appliedActivationMethod || null,
       pythonBackend ? selectedOperationalResellerId || null : null,
@@ -153,13 +159,15 @@ const ReceiptsPage: React.FC = () => {
           per_page: pageSize,
           activation_method: appliedActivationMethod.trim() || undefined,
           master_type: appliedMasterType || undefined,
+          search: appliedSearchTerm.trim() || undefined,
+          subscriber_name: appliedSubscriberName.trim() || undefined,
+          username: appliedSubscriberUsername.trim() || undefined,
         });
         const receipts = sortActivationRecordsNewestFirst(res.data).map(mapActivationToRenewalReceipt);
         setTotalItems(res.totalItems ?? receipts.length);
         setTotalPages(res.totalPages ?? 1);
-        setSasRequestBody(res.sas_request_body ?? null);
         return {
-          receipts: filterReceiptsSearchLocally(receipts),
+          receipts: pythonBackend ? receipts : filterReceiptsSearchLocally(receipts),
           pagination: {
             totalItems: res.totalItems,
             totalPages: res.totalPages,
@@ -264,7 +272,13 @@ const ReceiptsPage: React.FC = () => {
   }
 
   const hasActiveFilters = pythonBackend
-    ? !!(appliedMasterType || appliedActivationMethod || appliedSearchTerm)
+    ? !!(
+        appliedMasterType ||
+        appliedActivationMethod ||
+        appliedSearchTerm ||
+        appliedSubscriberName ||
+        appliedSubscriberUsername
+      )
     : !!(appliedFromDate || appliedToDate || appliedMasterType || appliedSearchTerm);
 
   const handleApplyFilters = (closeModal = false) => {
@@ -273,6 +287,8 @@ const ReceiptsPage: React.FC = () => {
       setAppliedToDate(toDate);
     }
     setAppliedSearchTerm(searchTerm.trim());
+    setAppliedSubscriberName(subscriberNameFilter.trim());
+    setAppliedSubscriberUsername(subscriberUsernameFilter.trim());
     setAppliedMasterType(masterTypeFilter);
     setAppliedActivationMethod(activationMethodFilter);
     setCurrentPage(1);
@@ -282,19 +298,24 @@ const ReceiptsPage: React.FC = () => {
   const openFiltersModal = () => {
     setMasterTypeFilter(appliedMasterType);
     setActivationMethodFilter(appliedActivationMethod);
+    setSubscriberNameFilter(appliedSubscriberName);
+    setSubscriberUsernameFilter(appliedSubscriberUsername);
     setShowFiltersModal(true);
   };
 
   const handleClearFilters = () => {
     setSearchTerm('');
     setAppliedSearchTerm('');
+    setSubscriberNameFilter('');
+    setSubscriberUsernameFilter('');
+    setAppliedSubscriberName('');
+    setAppliedSubscriberUsername('');
     setMasterTypeFilter('');
     setAppliedMasterType('');
     setActivationMethodFilter('');
     setAppliedActivationMethod('');
     setCurrentPage(1);
     setShowFiltersModal(false);
-    setSasRequestBody(null);
     if (!pythonBackend) {
       setFromDate('');
       setToDate('');
@@ -304,15 +325,15 @@ const ReceiptsPage: React.FC = () => {
   };
 
   const renderActivationMethodBadge = (receipt: RenewalReceipt) => {
-    const label = receipt.masterTypeLabel?.trim() || '—';
+    const label = getActivationMethodDisplayLabel(receipt);
     if (label === '—') {
       return <span className="text-gray-400">—</span>;
     }
     return (
       <span
-        className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${getMasterTypeBadgeClass(
-          receipt.masterType,
-          receipt.masterTypeLabel
+        className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${getActivationMethodDisplayBadgeClass(
+          receipt,
+          label
         )}`}
       >
         {label}
@@ -591,29 +612,10 @@ const ReceiptsPage: React.FC = () => {
             <Zap className="h-8 w-8 shrink-0 text-primary-600 dark:text-primary-400" aria-hidden />
             التفعيلات
           </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">
-            {pythonBackend
-              ? 'نفس ترتيب SAS — صفحة 1 = الأحدث (page + count فقط)'
-              : 'عرض وإدارة سجلات تفعيل المشتركين'}
-          </p>
-          {pythonBackend && (totalItems > 0 || appliedActivationMethod) && (
+          <p className="text-gray-600 dark:text-gray-400 mt-1">عرض وإدارة سجلات تفعيل المشتركين</p>
+          {pythonBackend && appliedActivationMethod && (
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-              {appliedActivationMethod && (
-                <span>
-                  نوع السجل: {formatActivationMethodAr(appliedActivationMethod)} ({appliedActivationMethod})
-                </span>
-              )}
-              {totalItems > 0 && (
-                <span className="block sm:inline sm:mr-2 mt-1 sm:mt-0 font-medium text-gray-700 dark:text-gray-300">
-                  الإجمالي: {formatNumber(totalItems)} تفعيل — صفحة {currentPage} من {totalPages} (
-                  {pageSize} لكل صفحة)
-                </span>
-              )}
-            </p>
-          )}
-          {pythonBackend && sasRequestBody && Object.keys(sasRequestBody).length > 0 && (
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 font-mono" dir="ltr">
-              SAS body: {JSON.stringify(sasRequestBody)}
+              نوع السجل: {formatActivationMethodAr(appliedActivationMethod)} ({appliedActivationMethod})
             </p>
           )}
         </div>
@@ -667,7 +669,7 @@ const ReceiptsPage: React.FC = () => {
                   autoComplete="off"
                   placeholder={
                     pythonBackend
-                      ? 'اسم المستخدم أو PIN أو المعاملة — يُصفّى على الصفحة الحالية بعد «تطبيق»'
+                      ? 'اسم أو يوزر أو PIN أو المعاملة — Enter أو «تطبيق» (من الباكند)'
                       : 'الاسم أو اسم المستخدم أو الهاتف أو رقم الفاتورة — Enter أو «تطبيق» (بحث من الخادم)'
                   }
                   value={searchTerm}
@@ -1155,6 +1157,30 @@ const ReceiptsPage: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  اسم المشترك
+                </label>
+                <input
+                  type="text"
+                  value={subscriberNameFilter}
+                  onChange={(e) => setSubscriberNameFilter(e.target.value)}
+                  placeholder="الاسم الأول / الأخير"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  يوزر المشترك
+                </label>
+                <input
+                  type="text"
+                  value={subscriberUsernameFilter}
+                  onChange={(e) => setSubscriberUsernameFilter(e.target.value)}
+                  placeholder="username@domain"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   تصنيف الماستر (اختياري)
                 </label>
                 <select
@@ -1168,8 +1194,8 @@ const ReceiptsPage: React.FC = () => {
                 </select>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                نوع السجل وتصنيف الماستر يُرسلان للباكند. الترقيم مثل SAS (page + count). البحث محلي على
-                الصفحة الحالية.
+                نوع السجل وتصنيف الماستر واسم/يوزر المشترك يُرسلان للباكند (SAS search + تصفية على
+                user_details). حقل البحث السريع أعلى الصفحة يستخدم search (اسم أو يوزر أو PIN).
               </p>
             </div>
             <div className="flex flex-col-reverse sm:flex-row gap-2 px-5 py-4 border-t border-gray-200 dark:border-gray-700">
@@ -1178,6 +1204,8 @@ const ReceiptsPage: React.FC = () => {
                 onClick={() => {
                   setActivationMethodFilter('');
                   setMasterTypeFilter('');
+                  setSubscriberNameFilter('');
+                  setSubscriberUsernameFilter('');
                 }}
                 className="flex-1 px-4 py-2.5 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
               >

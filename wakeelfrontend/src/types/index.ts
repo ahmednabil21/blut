@@ -2100,6 +2100,10 @@ export interface Subscriber {
   /** FTTH: customerId (مثال 2319750) */
   ftthCustomerId?: string | null;
   username: string;
+  /** SAS / مزامنة: اسم الجهاز على الشبكة (قد يختلف عن username) */
+  deviceUsername?: string | null;
+  /** SAS online_status: 1 = أونلاين، 0 = أوفلاين */
+  onlineStatus?: number | null;
   firstName: string;
   lastName: string;
   fullName: string;
@@ -2456,6 +2460,13 @@ export interface RenewalReceipt {
   activationTransaction?: string | null;
 }
 
+/** حالة مزامنة SAS في الخلفية — GET /api/subscribers */
+export interface SubscribersBackgroundSyncMeta {
+  in_progress: boolean;
+  scheduled: boolean;
+  stale: boolean;
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   currentPage: number;
@@ -2464,6 +2475,15 @@ export interface PaginatedResponse<T> {
   totalPages: number;
   hasNextPage: boolean;
   hasPreviousPage: boolean;
+  /** توافق .NET */
+  totalCount: number;
+  pageNumber: number;
+  /** Python GET /api/subscribers */
+  lastSyncedAt?: string | null;
+  source?: string;
+  resellerId?: number | string | null;
+  backgroundSync?: SubscribersBackgroundSyncMeta;
+  hint?: string | null;
 }
 
 /** استجابة GET /api/Debts أو /api/Debts/overdue-unpaid — تحتوي إجمالي الديون المطابقة للاستعلام (كل الصفحات) */
@@ -2911,14 +2931,6 @@ export interface ApiResponse<T> {
   message?: string;
 }
 
-export interface PaginatedResponse<T> {
-  data: T[];
-  totalCount: number;
-  pageNumber: number;
-  pageSize: number;
-  totalPages: number;
-}
-
 // Excel Import Types
 export interface ExcelImportAgent {
   id: string;
@@ -2956,23 +2968,6 @@ export interface ExcelImportResponse {
   errorCount?: number;
   errorDetails?: string;
   importDate?: string;
-}
-
-// Pagination Types
-export interface PaginatedResponse<T> {
-  data: T[];
-  currentPage: number;
-  pageSize: number;
-  totalItems: number;
-  totalPages: number;
-  hasNextPage: boolean;
-  hasPreviousPage: boolean;
-  totalCount: number;
-  pageNumber: number;
-  /** Python GET /api/subscribers */
-  source?: string;
-  lastSyncedAt?: string | null;
-  resellerId?: number | string | null;
 }
 
 /** POST /api/subscribers/sync */
@@ -3051,6 +3046,64 @@ export interface CardNextUnusedResponse {
   count: number;
   pins: { pin: string; serialnumber?: string | null; id?: number }[];
   source: string;
+}
+
+/** GET /api/activate/packages — باقة SAS مع عدد المتاح */
+export interface ActivatePackageItem {
+  package_key: string;
+  profile_id?: number;
+  profile_name?: string;
+  available_count?: number;
+  unused_in_db?: number;
+  series_count?: number;
+  recommended_series?: string | null;
+  activatable?: boolean;
+  series?: ActivateSeriesItem[];
+}
+
+export interface ActivatePackagesResponse {
+  packages: ActivatePackageItem[];
+  package_count?: number;
+  recommended_package_key?: string | null;
+  activatable_package_count?: number;
+  source?: string;
+  live_counts?: boolean;
+  hint?: string | null;
+  subscriber?: {
+    username?: string;
+    profile_id?: number;
+    profile_name?: string;
+  };
+}
+
+/** GET /api/subscribers/extend-day/status — زر تمديد يوم (1-DAY) */
+export interface ExtendDayStatusResponse {
+  username: string;
+  sas_user_id: number;
+  profile_id?: number;
+  profile_name?: string | null;
+  package_id?: number | null;
+  package_name?: string;
+  used_this_month: boolean;
+  eligible: boolean;
+  can_execute: boolean;
+  button_color: 'green' | 'red';
+  button_disabled: boolean;
+  message_ar?: string;
+  provider_type?: string;
+  package_error?: string | null;
+}
+
+/** POST /api/subscribers/extend-day */
+export interface ExtendDayExecuteResponse {
+  success: boolean;
+  username: string;
+  sas_user_id: number;
+  package_id: number;
+  package_name?: string;
+  message: string;
+  used_this_month?: boolean;
+  button_color?: string;
 }
 
 /** GET /api/activate/series — سلاسل الكارد لباقة المشترك (DB فقط) */
@@ -3141,8 +3194,10 @@ export interface ActivateModesResponse {
 /** POST /api/activate — كلمة السر من إعدادات الريسيلر (activation_password) */
 export interface ActivateSubscriberRequest {
   username: string;
-  card_pin: string;
+  card_pin?: string;
   series?: string;
+  profile_id?: number;
+  profile_name?: string;
   sync_codes?: boolean;
   mock?: boolean;
   activation_mode?: string;
@@ -3199,6 +3254,12 @@ export interface ActivationsListParams {
   per_page?: number;
   activation_method?: string | null;
   master_type?: string | null;
+  /** اسم المشترك */
+  subscriber_name?: string | null;
+  /** يوزر المشترك */
+  username?: string | null;
+  /** بحث موحّد: اسم أو يوزر أو PIN */
+  search?: string | null;
 }
 
 /** GET /api/activations */
@@ -3238,6 +3299,8 @@ export interface PaginationParams {
   profileId?: string | number;
   /** Python: إجبار مزامنة SAS قبل القراءة (GET ?sync=true) */
   sync?: boolean;
+  /** Python: حالة الاتصال — online | offline (SAS online_status) */
+  connectionStatus?: 'online' | 'offline' | 'all' | string;
 }
 
 /** معاملات استعلام قائمة الديون (GET /api/Debts) */

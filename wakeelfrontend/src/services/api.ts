@@ -6,6 +6,7 @@ import {
 } from '../utils/sessionManager';
 import { normalizeUser, normalizeUserList } from '../utils/normalizeUser';
 import { normalizeActivationRecord } from '../utils/activationRecord';
+import { parseOnlineStatusFromRow } from '../utils/subscriberOnlineStatus';
 
 import { 
   LoginRequest, 
@@ -42,10 +43,13 @@ import {
   CardNextUnusedResponse,
   ActivateAvailableCodesResponse,
   ActivateSeriesResponse,
+  ActivatePackagesResponse,
   ActivateModesResponse,
   ActivateModesConfig,
   ActivateSubscriberRequest,
   ActivateSubscriberResponse,
+  ExtendDayStatusResponse,
+  ExtendDayExecuteResponse,
   ActivationRecord,
   ActivationTypesResponse,
   ActivationsListParams,
@@ -2059,6 +2063,7 @@ class ApiService {
       row.subscription_status != null ? String(row.subscription_status) : null,
       daysRemaining
     );
+    const onlineStatus = parseOnlineStatusFromRow(row);
     const enabled = row.enabled;
     const isActive =
       daysRemaining >= 0 &&
@@ -2067,6 +2072,7 @@ class ApiService {
       id: sasId,
       secruptionId: sasId,
       username: String(row.username ?? ''),
+      onlineStatus,
       firstName,
       lastName,
       fullName,
@@ -2281,6 +2287,30 @@ class ApiService {
     };
   }
 
+  /** GET /api/activate/packages — باقات SAS مع عدد المتاح */
+  async getActivatePackages(params?: {
+    username?: string;
+    sasUserId?: number;
+    live?: boolean;
+    fromSas?: boolean;
+  }): Promise<ActivatePackagesResponse> {
+    const live = params?.live === true;
+    const fromSas = params?.fromSas !== false;
+    const response = await this.api.get<ActivatePackagesResponse>(
+      '/activate/packages',
+      {
+        params: {
+          ...(params?.username?.trim() ? { username: params.username.trim() } : {}),
+          ...(params?.sasUserId != null ? { sas_user_id: params.sasUserId } : {}),
+          live,
+          from_sas: fromSas,
+        },
+        timeout: live ? 120_000 : fromSas ? 90_000 : 30_000,
+      }
+    );
+    return response.data;
+  }
+
   /** GET /api/activate/series — سلاسل الكارد لباقة المشترك (سريع، DB فقط) */
   async getActivateSeries(params: {
     username?: string;
@@ -2325,24 +2355,70 @@ class ApiService {
    */
   async activateSubscriber(body: ActivateSubscriberRequest): Promise<ActivateSubscriberResponse> {
     const username = body.username.trim();
-    const card_pin = body.card_pin.trim();
+    const card_pin = body.card_pin?.trim() ?? '';
     const series = body.series?.trim() ?? '';
-    if (!username || !card_pin || !series) {
-      throw new Error('اسم المستخدم و PIN والسلسلة مطلوبة');
+    const profile_name = body.profile_name?.trim() ?? '';
+    const hasProfile =
+      body.profile_id != null && Number.isFinite(body.profile_id) || profile_name.length > 0;
+    if (!username) {
+      throw new Error('اسم المستخدم مطلوب');
+    }
+    if (!card_pin && !hasProfile && !series) {
+      throw new Error('اختر الباقة أو أرسل السلسلة مع PIN');
     }
     const payload: Record<string, unknown> = {
       username,
-      card_pin,
-      series,
       mock: body.mock === true ? true : false,
+      sync_codes: body.sync_codes !== false,
     };
-    if (body.sync_codes === true) {
-      payload.sync_codes = true;
+    if (card_pin) payload.card_pin = card_pin;
+    if (series) payload.series = series;
+    if (body.profile_id != null && Number.isFinite(body.profile_id)) {
+      payload.profile_id = body.profile_id;
     }
+    if (profile_name) payload.profile_name = profile_name;
     if (body.activation_mode?.trim()) {
       payload.activation_mode = body.activation_mode.trim();
     }
     const response = await this.api.post<ActivateSubscriberResponse>('/activate', payload);
+    return response.data;
+  }
+
+  /** GET /api/subscribers/extend-day/status — هل يمكن تمديد 1-DAY هذا الشهر؟ */
+  async getExtendDayStatus(params: {
+    username?: string;
+    sasUserId?: number;
+  }): Promise<ExtendDayStatusResponse> {
+    const response = await this.api.get<ExtendDayStatusResponse>(
+      '/subscribers/extend-day/status',
+      {
+        params: {
+          ...(params.username?.trim() ? { username: params.username.trim() } : {}),
+          ...(params.sasUserId != null && Number.isFinite(params.sasUserId)
+            ? { sas_user_id: params.sasUserId }
+            : {}),
+        },
+        timeout: 60_000,
+      }
+    );
+    return response.data;
+  }
+
+  /** POST /api/subscribers/extend-day — تنفيذ تمديد يوم واحد */
+  async executeExtendDay(body: {
+    username?: string;
+    sasUserId?: number;
+  }): Promise<ExtendDayExecuteResponse> {
+    const payload: Record<string, unknown> = {};
+    if (body.username?.trim()) payload.username = body.username.trim();
+    if (body.sasUserId != null && Number.isFinite(body.sasUserId)) {
+      payload.sas_user_id = body.sasUserId;
+    }
+    const response = await this.api.post<ExtendDayExecuteResponse>(
+      '/subscribers/extend-day',
+      payload,
+      { timeout: 60_000 }
+    );
     return response.data;
   }
 
@@ -2418,6 +2494,11 @@ class ApiService {
           ? { activation_method: params.activation_method.trim() }
           : {}),
         ...(params?.master_type?.trim() ? { master_type: params.master_type.trim() } : {}),
+        ...(params?.subscriber_name?.trim()
+          ? { subscriber_name: params.subscriber_name.trim() }
+          : {}),
+        ...(params?.username?.trim() ? { username: params.username.trim() } : {}),
+        ...(params?.search?.trim() ? { search: params.search.trim() } : {}),
       },
     });
     const body = response.data ?? {};
@@ -2497,6 +2578,8 @@ class ApiService {
           source?: string;
           last_synced_at?: string | null;
           reseller_id?: number;
+          background_sync?: Record<string, unknown>;
+          hint?: string;
         }>('/subscribers', { params: queryParams });
         const body = response.data ?? {};
         const list = (Array.isArray(body.data) ? body.data : []) as Record<string, unknown>[];
@@ -2504,6 +2587,7 @@ class ApiService {
         const lastPage = body.last_page ?? 1;
         const total = body.total ?? list.length;
         const totalPages = Math.max(1, lastPage);
+        const bg = body.background_sync as Record<string, unknown> | undefined;
         return {
           data: list.map((row) => this.mapSasRowToSubscriber(row, fetchReseller)),
           currentPage,
@@ -2517,6 +2601,14 @@ class ApiService {
           source: body.source,
           lastSyncedAt: body.last_synced_at ?? null,
           resellerId: body.reseller_id ?? null,
+          backgroundSync: bg
+            ? {
+                in_progress: !!bg.in_progress,
+                scheduled: !!bg.scheduled,
+                stale: !!bg.stale,
+              }
+            : undefined,
+          hint: typeof body.hint === 'string' ? body.hint : null,
         };
       }
 
@@ -2579,13 +2671,18 @@ class ApiService {
         totalPages: body.totalPages ?? (body as any).TotalPages ?? 1,
         hasNextPage: body.hasNextPage ?? (body as any).HasNextPage ?? false,
         hasPreviousPage: body.hasPreviousPage ?? (body as any).HasPreviousPage ?? false,
-        data: list.map((subscriber: any) => ({
-          ...subscriber,
-          id: String(subscriber.id ?? subscriber.Id ?? '').trim(),
-          paymentStatus: subscriber.paymentStatus === 0 ? PaymentStatus.Unknown : subscriber.paymentStatus,
-          paymentMethod: subscriber.paymentMethod ?? subscriber.PaymentMethod ?? null,
-          expirationDate: subscriber.expirationDate || subscriber.activationDate,
-        })),
+        data: list.map((subscriber: any) => {
+          const row = subscriber as Record<string, unknown>;
+          const onlineStatus = parseOnlineStatusFromRow(row);
+          return {
+            ...subscriber,
+            id: String(subscriber.id ?? subscriber.Id ?? '').trim(),
+            ...(onlineStatus !== null ? { onlineStatus } : {}),
+            paymentStatus: subscriber.paymentStatus === 0 ? PaymentStatus.Unknown : subscriber.paymentStatus,
+            paymentMethod: subscriber.paymentMethod ?? subscriber.PaymentMethod ?? null,
+            expirationDate: subscriber.expirationDate || subscriber.activationDate,
+          };
+        }),
       };
 
       return processedData;
