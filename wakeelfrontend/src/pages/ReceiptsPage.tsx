@@ -601,6 +601,7 @@ const ReceiptsPage: React.FC = () => {
         />
       </div>
     );
+    
   }
 
   return (
