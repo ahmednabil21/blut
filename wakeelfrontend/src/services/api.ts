@@ -227,6 +227,7 @@ import {
   mapPythonSubscriptionStatusToFrontend,
   type PythonSubscriptionStatusOption,
 } from '../utils/pythonSubscribersQuery';
+import { formatActivateApiDetail } from '../utils/activateApiErrors';
 
 /** قائمة كاملة للاستخدام عندما لا يعيد الـ API كتالوجاً أو يكون فارغاً بعد التطبيع */
 export function defaultSubscriberNoteTypeOptions(): SubscriberNoteTypeOption[] {
@@ -590,9 +591,10 @@ class ApiService {
     if (typeof data === 'string' && data.trim()) {
       return mapBackendErrorMessageForUser(data.trim());
     }
-    // ProblemDetails أو غيره: حقل detail
-    if (data?.detail && typeof data.detail === 'string' && data.detail.trim()) {
-      return mapBackendErrorMessageForUser(data.detail.trim());
+    // FastAPI: detail نص أو كائن (تفعيل، تحقق، SAS)
+    if (data?.detail != null) {
+      const fromDetail = formatActivateApiDetail(data.detail);
+      if (fromDetail) return fromDetail;
     }
     // إذا كان الخطأ يحتوي على رسالة باللغة العربية، استخدمها
     if (data?.message) {
@@ -2317,15 +2319,26 @@ class ApiService {
     return response.data;
   }
 
-  /** POST /api/activate — تفعيل كارد عبر بوابة المشترك */
+  /**
+   * POST /api/activate — عقد SAS: username + card_pin + series + mock:false فقط.
+   * Headers: Authorization, X-Reseller-Id (من الاعتراض).
+   */
   async activateSubscriber(body: ActivateSubscriberRequest): Promise<ActivateSubscriberResponse> {
+    const username = body.username.trim();
+    const card_pin = body.card_pin.trim();
+    const series = body.series?.trim() ?? '';
+    if (!username || !card_pin || !series) {
+      throw new Error('اسم المستخدم و PIN والسلسلة مطلوبة');
+    }
     const payload: Record<string, unknown> = {
-      username: body.username.trim(),
-      card_pin: body.card_pin.trim(),
-      series: body.series?.trim() || undefined,
-      sync_codes: body.sync_codes === true,
-      mock: body.mock === true,
+      username,
+      card_pin,
+      series,
+      mock: body.mock === true ? true : false,
     };
+    if (body.sync_codes === true) {
+      payload.sync_codes = true;
+    }
     if (body.activation_mode?.trim()) {
       payload.activation_mode = body.activation_mode.trim();
     }

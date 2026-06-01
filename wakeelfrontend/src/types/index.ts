@@ -3154,6 +3154,10 @@ export interface ActivateSubscriberResponse {
   message?: string;
   username?: string;
   card_pin?: string;
+  activation_mode?: string;
+  sas_response?: { message?: string; status?: unknown; [key: string]: unknown };
+  sasResponse?: { message?: string; status?: unknown; [key: string]: unknown };
+  preflight?: Record<string, unknown>;
 }
 
 /** GET /api/activations — تفاصيل المشترك في سجل التفعيل */

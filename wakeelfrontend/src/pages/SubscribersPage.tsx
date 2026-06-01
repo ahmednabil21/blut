@@ -33,6 +33,12 @@ import {
   setSelectedResellerId,
 } from '../utils/selectedReseller';
 import {
+  formatActivateApiError,
+  getActivateSasResponseMessage,
+  isActivateMissingSubscriberError,
+  isActivateSuccessResponse,
+} from '../utils/activateApiErrors';
+import {
   daysUntilExpiration,
   calendarDaysBetween,
   subscriberDaysRemaining,
@@ -1717,10 +1723,25 @@ const SubscribersPage: React.FC = () => {
       });
     },
     onSuccess: async (res) => {
+      if (!isActivateSuccessResponse(res)) {
+        const sasMsg = getActivateSasResponseMessage(res);
+        showError(
+          'فشل التفعيل',
+          res.message?.trim() ||
+            (sasMsg ? `رفض SAS: ${sasMsg}` : 'لم يُؤكَّد نجاح التفعيل من SAS')
+        );
+        return;
+      }
       const modeLabel = activateModeConfig?.display_name_ar?.trim();
+      const sasOk = getActivateSasResponseMessage(res);
       showSuccess(
         'تم التفعيل',
-        res.message ?? (modeLabel ? `تم التفعيل — ${modeLabel}` : 'تم تفعيل الكارد بنجاح')
+        res.message?.trim() ||
+          (sasOk === 'rsp_success'
+            ? 'تم التفعيل بنجاح (rsp_success)'
+            : modeLabel
+              ? `تم التفعيل — ${modeLabel}`
+              : 'تم تفعيل الكارد بنجاح')
       );
       void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
       void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
@@ -1728,7 +1749,17 @@ const SubscribersPage: React.FC = () => {
       closeRenewalModal();
       setSelectedIds([]);
     },
-    onError: (err: unknown) => showError('فشل التفعيل', ApiService.showError(err)),
+    onError: (err: unknown) => {
+      const msg = formatActivateApiError(err);
+      if (isActivateMissingSubscriberError(err)) {
+        showError(
+          'فشل التفعيل',
+          `${msg}\n\nيمكنك مزامنة المشتركين من زر «مزامنة المشتركين» ثم إعادة المحاولة.`
+        );
+        return;
+      }
+      showError('فشل التفعيل', msg);
+    },
   });
 
   const otherDealerTopUpMutation = useMutation({
