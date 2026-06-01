@@ -55,7 +55,7 @@ import {
   statusBadgeClassFromDays,
   statusLabelFromDaysRemaining,
 } from '../utils/subscriberExpiry';
-import { Subscriber, SubscriptionStatus, SubscriptionType, SubscriberCreateRequest, Profile, RenewalData, RenewalActivationMode, PaymentStatus, PaginatedResponse, PaginationParams, UserRole, ServiceType, SubscriberNoteType, EARTHLINK_USER_MANAGEMENT_URL, AgentReseller, ProfilePackageType, formatServiceTypeLabelAr, SUBSCRIBER_FETCH_LIMIT_PRESETS, type SubscriberFetchLimitOption, type CashbackSynchronizationFtthResponse, type CashbackSynchronizationFtthRow, type ZainfiSubscriberDiffResponse, type ZainfiSubscriberDiffItem, type ZainfiApplyExternalExpirationRequest, type ActivationInvoicePrintSettingsDto, type BalanceTopUpRequest, type Dealer, type SubscriberNoteTypeOption, type CardCode, User } from '../types';
+import { Subscriber, SubscriptionStatus, SubscriptionType, SubscriberCreateRequest, Profile, RenewalData, RenewalActivationMode, PaymentStatus, PaginatedResponse, PaginationParams, UserRole, ServiceType, SubscriberNoteType, EARTHLINK_USER_MANAGEMENT_URL, AgentReseller, ProfilePackageType, formatServiceTypeLabelAr, SUBSCRIBER_FETCH_LIMIT_PRESETS, type SubscriberFetchLimitOption, type CashbackSynchronizationFtthResponse, type CashbackSynchronizationFtthRow, type ZainfiSubscriberDiffResponse, type ZainfiSubscriberDiffItem, type ZainfiApplyExternalExpirationRequest, type ActivationInvoicePrintSettingsDto, type BalanceTopUpRequest, type Dealer, type SubscriberNoteTypeOption, User } from '../types';
 import {
   buildActivationReceiptPrintHtml,
   renewalLikeToActivationPrintPayload,
@@ -317,7 +317,7 @@ function filterAutoSyncFtthRowsWithDeviceUsername(
 }
 
 const SubscribersPage: React.FC = () => {
-  const { confirmDelete, confirmAction } = useConfirmation();
+  const { confirmDelete } = useConfirmation();
   const { user, isAuthenticated } = useAuth();
   const { online, refreshPendingCount } = useOffline();
   const { formatNumber, formatDate, locale } = useDigits();
@@ -589,9 +589,6 @@ const SubscribersPage: React.FC = () => {
     selectedSubscriberForRenewal ?? subscribers?.find((s) => s.id === renewalData.subscriberId) ?? null;
   const renewalResellerIdForQuery = (selectedSubscriber?.agentResellerId ?? '').trim() || undefined;
   const activateUsername = (selectedSubscriber?.username ?? '').trim();
-
-  const activateProfileName = (selectedSubscriber?.profileName ?? '').trim();
-  const activateProfileId = (selectedSubscriber?.profileId ?? '').trim();
   const pythonActivateResellerId = activateModalResellerId.trim();
 
   const {

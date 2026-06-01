@@ -2359,7 +2359,7 @@ class ApiService {
     const series = body.series?.trim() ?? '';
     const profile_name = body.profile_name?.trim() ?? '';
     const hasProfile =
-      body.profile_id != null && Number.isFinite(body.profile_id) || profile_name.length > 0;
+      (body.profile_id != null && Number.isFinite(body.profile_id)) || profile_name.length > 0;
     if (!username) {
       throw new Error('اسم المستخدم مطلوب');
     }
