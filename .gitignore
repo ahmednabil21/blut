@@ -1,0 +1,16 @@
+.DS_Store
+node_modules/
+**/node_modules/
+**/build/
+**/coverage/
+
+# أسرار وبيئة — لا تُرفع
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
+**/.env
+**/.env.development
+**/.env.production
+!**/.env.example
