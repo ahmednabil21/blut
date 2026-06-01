@@ -2,6 +2,10 @@
   "installCommand": "cd wakeelfrontend && npm install",
   "buildCommand": "cd wakeelfrontend && npm run build",
   "outputDirectory": "wakeelfrontend/build",
+  "env": {
+    "REACT_APP_API_URL": "https://bult.execute-iq.com/api",
+    "REACT_APP_BACKEND": "python"
+  },
   "redirects": [
     {
       "source": "/",
