@@ -147,7 +147,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => {
       if (id != null) clearTimeout(id);
     };
-  }, [user?.id]);
+  }, [user]);
 
   const login = async (username: string, password: string, turnstileToken?: string) => {
     try {

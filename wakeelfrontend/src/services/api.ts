@@ -62,7 +62,6 @@ import {
   RenewalActivationMode,
   PaymentStatus,
   SubscriptionType,
-  SubscriptionStatus,
   Debt,
   DebtsListResponse,
   DebtCreateRequest,
@@ -222,10 +221,7 @@ import { getApiBaseUrl, isPythonBackend } from '../config/apiConfig';
 import type { SasPythonLoginBody } from './sasPythonApi';
 import { apiResellerToAgentReseller, normalizeApiReseller } from '../utils/apiReseller';
 import { clearSelectedResellerId, getSelectedResellerId } from '../utils/selectedReseller';
-import {
-  daysUntilExpiration,
-  deriveSubscriptionStatus,
-} from '../utils/subscriberExpiry';
+import { daysUntilExpiration } from '../utils/subscriberExpiry';
 import {
   buildPythonSubscribersQueryParams,
   mapPythonSubscriptionStatusToFrontend,

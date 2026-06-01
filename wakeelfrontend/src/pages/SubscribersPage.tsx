@@ -2058,7 +2058,6 @@ const SubscribersPage: React.FC = () => {
           ...prev,
           [name]: newValue
         };
-        const selectedProfile = renewalInfo?.availableProfiles?.find(p => p.id === updated.newProfileId);
 
         if (name === 'newProfileId') {
           const rawId = String(newValue ?? '');
