@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { apiService, ApiService, defaultSubscriberNoteTypeOptions } from '../services/api';
@@ -38,6 +38,11 @@ import {
   isActivateMissingSubscriberError,
   isActivateSuccessResponse,
 } from '../utils/activateApiErrors';
+import {
+  formatActivateSeriesOptionLabel,
+  seriesIsActivatableOnSas,
+  seriesSasAvailableCount,
+} from '../utils/activateSeries';
 import {
   daysUntilExpiration,
   calendarDaysBetween,
@@ -600,6 +605,20 @@ const SubscribersPage: React.FC = () => {
     retry: false,
   });
 
+  const activateSeriesList = useMemo(
+    () => activateSeriesBundle?.series ?? [],
+    [activateSeriesBundle?.series]
+  );
+  const selectedActivateSeriesRow = useMemo(
+    () => activateSeriesList.find((s) => s.series === activateSelectedSeries),
+    [activateSeriesList, activateSelectedSeries]
+  );
+  const selectedSeriesActivatableOnSas = seriesIsActivatableOnSas(selectedActivateSeriesRow);
+  const activatableSeriesCount = useMemo(
+    () => activateSeriesList.filter((s) => seriesIsActivatableOnSas(s)).length,
+    [activateSeriesList]
+  );
+
   const {
     data: activateCardCodesResponse,
     isLoading: activateCardCodesLoading,
@@ -618,7 +637,8 @@ const SubscribersPage: React.FC = () => {
       showRenewalModal &&
       isPythonBackend() &&
       !!pythonActivateResellerId &&
-      !!activateSelectedSeries,
+      !!activateSelectedSeries &&
+      selectedSeriesActivatableOnSas,
     retry: false,
   });
 
@@ -629,13 +649,18 @@ const SubscribersPage: React.FC = () => {
     const list = activateSeriesBundle?.series ?? [];
     if (!list.length) return;
     const rec = activateSeriesBundle?.recommended_series?.trim();
-    if (rec && list.some((s) => s.series === rec)) {
-      setActivateSelectedSeries((prev) => prev || rec);
-      return;
-    }
-    if (list.length === 1) {
-      setActivateSelectedSeries((prev) => prev || list[0].series);
-    }
+    setActivateSelectedSeries((prev) => {
+      if (prev && list.some((s) => s.series === prev && seriesIsActivatableOnSas(s))) {
+        return prev;
+      }
+      if (rec) {
+        const recRow = list.find((s) => s.series === rec);
+        if (recRow && seriesIsActivatableOnSas(recRow)) return rec;
+      }
+      const firstOk = list.find((s) => seriesIsActivatableOnSas(s));
+      return firstOk?.series ?? '';
+    });
+    setActivateCardPin('');
   }, [showRenewalModal, activateSeriesBundle]);
 
   const { data: profilesResponse } = useQuery({
@@ -1698,7 +1723,14 @@ const SubscribersPage: React.FC = () => {
 
   const handleActivateCodesSyncPrompt = async () => {
     if (!activateSelectedSeries) return;
-    const seriesRow = activateSeriesBundle?.series?.find((s) => s.series === activateSelectedSeries);
+    const seriesRow = selectedActivateSeriesRow;
+    if (!seriesIsActivatableOnSas(seriesRow)) {
+      showError(
+        'مزامنة الأكواد',
+        'هذه السلسلة بلا أكواد متاحة على SAS. المزامنة لا تغيّر أن الأكواد مستخدمة على الشبكة — اختر سلسلة أخرى.'
+      );
+      return;
+    }
     const unused = seriesRow?.unused_in_db ?? 0;
     const ok = await confirmAction(
       'التحقق والمزامنة',
@@ -2136,6 +2168,13 @@ const SubscribersPage: React.FC = () => {
     }
     if (!activateSelectedSeries.trim()) {
       showError('السلسلة', 'اختر سلسلة كارد من القائمة.');
+      return;
+    }
+    if (!selectedSeriesActivatableOnSas) {
+      showError(
+        'السلسلة',
+        'لا توجد أكواد متاحة على SAS لهذه السلسلة (مستخدمة على الشبكة). اختر سلسلة أخرى أو حدّث المخزون من SAS.'
+      );
       return;
     }
     const pin = activateCardPin.trim();
@@ -4104,11 +4143,21 @@ const SubscribersPage: React.FC = () => {
                               >
                                 <option value="">— اختر السلسلة —</option>
                                 {(activateSeriesBundle?.series ?? []).map((s) => (
-                                  <option key={s.series} value={s.series}>
-                                    {s.series} — متاح محلياً: {s.unused_in_db ?? 0} / {s.available_count ?? 0}
+                                  <option
+                                    key={s.series}
+                                    value={s.series}
+                                    disabled={!seriesIsActivatableOnSas(s)}
+                                  >
+                                    {formatActivateSeriesOptionLabel(s)}
                                   </option>
                                 ))}
                               </select>
+                              {activatableSeriesCount === 0 && activateSeriesList.length > 0 && (
+                                <p className="text-xs text-red-700 dark:text-red-300 mt-1">
+                                  كل السلاسل المعروضة بلا أكواد متاحة على SAS — لا يمكن التفعيل حتى يتوفر مخزون
+                                  غير مستخدم على الشبكة.
+                                </p>
+                              )}
                               {activateSeriesBundle?.hint && (
                                 <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
                                   {activateSeriesBundle.hint}
@@ -4116,7 +4165,23 @@ const SubscribersPage: React.FC = () => {
                               )}
                             </div>
 
-                            {activateSelectedSeries && (
+                            {activateSelectedSeries && !selectedSeriesActivatableOnSas && (
+                              <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 space-y-1">
+                                <p className="text-sm font-medium text-red-900 dark:text-red-100">
+                                  لا توجد أكواد متاحة على SAS
+                                </p>
+                                <p className="text-xs text-red-800 dark:text-red-200">
+                                  السلسلة «{activateSelectedSeries}» — متاح على SAS:{' '}
+                                  {seriesSasAvailableCount(selectedActivateSeriesRow)}.
+                                  {Number(selectedActivateSeriesRow?.unused_in_db ?? 0) > 0
+                                    ? ` يوجد ${selectedActivateSeriesRow?.unused_in_db} كوداً محلياً لكنها مستخدمة على الشبكة ولا تُعرض للتفعيل.`
+                                    : ''}{' '}
+                                  اختر سلسلة أخرى من القائمة.
+                                </p>
+                              </div>
+                            )}
+
+                            {activateSelectedSeries && selectedSeriesActivatableOnSas && (
                               <>
                                 {activateCardCodesLoading || activateCardCodesFetching ? (
                                   <p className="text-sm text-gray-500 flex items-center gap-2">
@@ -4179,18 +4244,20 @@ const SubscribersPage: React.FC = () => {
                               </>
                             )}
 
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                                كود التفعيل (PIN) *
-                              </label>
-                              <input
-                                type="text"
-                                readOnly
-                                value={activateCardPin}
-                                placeholder="اضغط على كود من الأعلى"
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg font-mono bg-gray-50 dark:bg-gray-900/50 dark:text-white"
-                              />
-                            </div>
+                            {selectedSeriesActivatableOnSas && (
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                  كود التفعيل (PIN) *
+                                </label>
+                                <input
+                                  type="text"
+                                  readOnly
+                                  value={activateCardPin}
+                                  placeholder="اضغط على كود من الأعلى"
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg font-mono bg-gray-50 dark:bg-gray-900/50 dark:text-white"
+                                />
+                              </div>
+                            )}
                           </>
                         )}
                       </div>
@@ -4577,7 +4644,10 @@ const SubscribersPage: React.FC = () => {
                     type="submit"
                     disabled={
                       isPythonBackend()
-                        ? pythonActivateMutation.isPending || activateCodesSyncMutation.isPending
+                        ? pythonActivateMutation.isPending ||
+                          activateCodesSyncMutation.isPending ||
+                          !selectedSeriesActivatableOnSas ||
+                          !activateCardPin.trim()
                         : createRenewalMutation.isPending
                     }
                     className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed min-w-[140px]"
