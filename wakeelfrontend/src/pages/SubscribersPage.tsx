@@ -2471,6 +2471,12 @@ const SubscribersPage: React.FC = () => {
     }
   };
 
+  const handlePostActivationSaveAndWhatsApp = async () => {
+    if (!lastReceipt) return;
+    setShowReceiptModal(false);
+    await handleSendWhatsApp(lastReceipt);
+  };
+
   const handleSendSubscriberDetails = async (subscriber: Subscriber) => {
     if (myAgentLoading) {
       showInfo('إرسال دين او التفاصيل', 'جاري التحقق من جلسة واتساب...');
@@ -4704,6 +4710,7 @@ const SubscribersPage: React.FC = () => {
                 type="button"
                 disabled
                 title="سيتم تفعيل إرسال الواتساب لاحقاً"
+                onClick={() => void handlePostActivationSaveAndWhatsApp()}
                 className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-600 px-4 py-3 text-sm font-medium text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-700/50 cursor-not-allowed"
               >
                 <MessageCircle className="h-4 w-4" />
