@@ -2,19 +2,22 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { DashboardSolidCard } from '../components/DashboardSolidCard';
-import { DashboardBalanceCreditCard } from '../components/dashboard/DashboardBalanceCreditCard';
 import { DashboardBarChartPanel, type DashboardBarChartItem } from '../components/dashboard/DashboardBarChartPanel';
+import {
+  DashboardSubscriberStatsCards,
+  buildSubscriberDashboardStatCards,
+} from '../components/dashboard/DashboardSubscriberStatsCards';
 import WifiLoaderComponent from '../components/WifiLoaderComponent';
 import IraqSubAgentsMap from '../components/IraqSubAgentsMap';
 import { apiService, ApiService } from '../services/api';
 import { showSuccess, showError } from '../utils/notifications';
 import { createXlsxBlob } from '../utils/excelExport';
-import { getAgentBalance } from '../utils/balance';
 import { useAuth } from '../contexts/AuthContext';
 import { useOffline } from '../contexts/OfflineContext';
 import { useDigits } from '../contexts/DigitsContext';
-import { fetchDebtsWithCache, fetchDashboardWithCache, fetchReceiptsWithCache } from '../services/offlineSync';
+import { fetchDashboardWithCache, fetchReceiptsWithCache } from '../services/offlineSync';
 import { getBaghdadDayBoundsIso, getBaghdadRangeBoundsIso, getBaghdadTodayYmd } from '../utils/iraqCalendar';
+import { isPythonBackend } from '../config/apiConfig';
 import {
   Agent,
   PaginatedResponse,
@@ -106,7 +109,6 @@ const DashboardPage: React.FC = () => {
   const isAdmin = user?.role === UserRole.Admin;
   const isMainAgent = user?.role === UserRole.MainAgent;
   const accountDisplayName = (user?.fullName?.trim() || user?.username || '').trim();
-  const [balance, setBalance] = useState(0);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   const [selectedResellerId, setSelectedResellerId] = useState<string>('');
   const [showIncomingModal, setShowIncomingModal] = useState(false);
@@ -139,21 +141,6 @@ const DashboardPage: React.FC = () => {
     if (!fOk && tOk) return getBaghdadDayBoundsIso(t);
     return getBaghdadDayBoundsIso(getBaghdadTodayYmd());
   }, [appliedIncomingFromDate, appliedIncomingToDate]);
-
-  useEffect(() => {
-    apiService.getBalance()
-      .then((r) => setBalance(r.balanceIqd))
-      .catch(() => setBalance(getAgentBalance(user?.id)));
-  }, [user?.id]);
-  useEffect(() => {
-    const onFocus = () => {
-      apiService.getBalance()
-        .then((r) => setBalance(r.balanceIqd))
-        .catch(() => setBalance(getAgentBalance(user?.id)));
-    };
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [user?.id]);
 
   const { data: agentsResponse } = useQuery<PaginatedResponse<Agent>>({
     queryKey: ['dashboard-agents'],
@@ -203,6 +190,10 @@ const DashboardPage: React.FC = () => {
     enabled: !isAdmin && !isMainAgent,
   });
 
+  const [dashboardForceRefresh, setDashboardForceRefresh] = useState(false);
+  const pythonBackend = isPythonBackend();
+  const dashboardPollMs = pythonBackend ? 5 * 60 * 1000 : 30_000;
+
   const { data: stats, error, refetch: refetchStats, isLoading: statsLoading } = useQuery<SubscribersDashboardStats>({
     queryKey: [
       'subscribers-dashboard',
@@ -213,8 +204,8 @@ const DashboardPage: React.FC = () => {
       online,
     ],
     enabled: !isMainAgent && (!isAdmin || !!selectedAgentId),
-    queryFn: () =>
-      fetchDashboardWithCache(
+    queryFn: async () => {
+      const result = await fetchDashboardWithCache(
         online,
         isAdmin
           ? {
@@ -226,17 +217,16 @@ const DashboardPage: React.FC = () => {
               fromDate: effectiveDashboardBounds.fromDate,
               toDate: effectiveDashboardBounds.toDate,
               resellerId: selectedResellerId || undefined,
-            }
-      ),
-    refetchInterval: 30000,
+            },
+        dashboardForceRefresh
+      );
+      if (dashboardForceRefresh) setDashboardForceRefresh(false);
+      return result;
+    },
+    refetchInterval: dashboardPollMs,
   });
 
-  const { data: debtsData, isLoading: debtsLoading } = useQuery({
-    queryKey: ['debts-stats', 'offline', online],
-    queryFn: () => fetchDebtsWithCache(online, { page: 1, pageSize: 10000 }, false),
-    refetchInterval: 30000,
-    enabled: !isMainAgent,
-  });
+  const debtsLoading = false;
 
   /** آخر تفعيلات من إيصالات التجديد — جلب دفعة ثم ترتيب حسب التاريخ لضمان أحدث 5 */
   const { data: recentActivationReceipts = [], isLoading: recentActivationsLoading } = useQuery<RenewalReceipt[]>({
@@ -264,12 +254,13 @@ const DashboardPage: React.FC = () => {
       );
       return list.slice(0, 5);
     },
-    enabled: !isMainAgent && (!isAdmin || !!selectedAgentId),
+    enabled: !pythonBackend && !isMainAgent && (!isAdmin || !!selectedAgentId),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
 
   const teamStatsEnabled =
+    !pythonBackend &&
     !isMainAgent &&
     !!user &&
     ((isAdmin && !!selectedAgentId) ||
@@ -306,8 +297,8 @@ const DashboardPage: React.FC = () => {
     });
 
   const debtsStats = {
-    totalDebtAmount: stats?.totalDebtAmount ?? (debtsData?.data?.reduce((total: number, debt: Debt) => total + debt.amount, 0) || 0),
-    totalDebtors: debtsData?.data?.length || 0
+    totalDebtAmount: Number(stats?.totalDebtAmount ?? 0),
+    totalDebtors: 0,
   };
 
   useEffect(() => {
@@ -343,11 +334,11 @@ const DashboardPage: React.FC = () => {
 
   const handleRefresh = () => {
     if (isMainAgent) refetchMainAgentDashboard();
-    else refetchStats();
+    else {
+      if (pythonBackend) setDashboardForceRefresh(true);
+      void refetchStats();
+    }
     if (!isMainAgent) {
-      apiService.getBalance()
-        .then((r) => setBalance(r.balanceIqd))
-        .catch(() => setBalance(getAgentBalance(user?.id)));
       void queryClient.invalidateQueries({ queryKey: ['dashboard-recent-employee-tasks'] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard-recent-activations'] });
     }
@@ -374,6 +365,14 @@ const DashboardPage: React.FC = () => {
     else navigate('/admin/subscribers?status=expired');
   };
 
+  const handleOnlineSubscribersClick = () => {
+    navigate('/admin/subscribers');
+  };
+
+  const handleOfflineSubscribersClick = () => {
+    navigate('/admin/subscribers');
+  };
+
   const handleResellerCardClick = (resellerId: string) => {
     const next = selectedResellerId === resellerId ? '' : resellerId;
     setSelectedResellerId(next);
@@ -388,10 +387,6 @@ const DashboardPage: React.FC = () => {
 
   const handleMainAgentSubAgentsClick = () => {
     navigate('/admin/main-agent/sub-agents');
-  };
-
-  const handleBalanceClick = () => {
-    navigate('/admin/receipts');
   };
 
   const handleIncomingClick = () => {
@@ -545,21 +540,29 @@ const DashboardPage: React.FC = () => {
     }
   };
 
-  const balanceAmountIqd = selectedResellerId ? Number(stats?.regionalBalanceIqd ?? 0) : balance;
-
   const sortedDashboardResellers = useMemo(
     () => [...myResellers].sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0)),
     [myResellers]
   );
 
+  const subscriberStatCards = buildSubscriberDashboardStatCards(stats, {
+    onTotal: handleTotalSubscribersClick,
+    onActive: handleActiveSubscribersClick,
+    onOnline: handleOnlineSubscribersClick,
+    onOffline: handleOfflineSubscribersClick,
+    onExpired: handleExpiredClick,
+    onExpiring: handleExpiringWithin3DaysClick,
+  });
+
   const subscriberChartItems = useMemo(
     () => [
       { id: 'active', label: 'الفعالين', value: stats?.active ?? 0, color: '#10b981' },
+      { id: 'online', label: 'متصلون', value: stats?.online ?? stats?.sasOnlineUsers ?? 0, color: '#0ea5e9' },
       { id: 'expiring', label: 'منتهي خلال 3 أيام', value: stats?.expiringWithin3Days ?? 0, color: '#f59e0b' },
       { id: 'expired', label: 'منتهي الصلاحية', value: stats?.expired ?? 0, color: '#f43f5e' },
       { id: 'total', label: 'إجمالي المشتركين', value: stats?.total ?? 0, color: '#6366f1' },
     ],
-    [stats?.active, stats?.expiringWithin3Days, stats?.expired, stats?.total]
+    [stats?.active, stats?.online, stats?.sasOnlineUsers, stats?.expiringWithin3Days, stats?.expired, stats?.total]
   );
 
   const financialChartItems = useMemo(() => {
@@ -661,9 +664,9 @@ const DashboardPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#f4f6f9] dark:bg-gray-950">
       <div className="p-4 sm:p-5 lg:p-8 max-w-[1600px] mx-auto">
-      {/* ترحيب + بطاقة رصيد (العمود الثاني = اليسار في الواجهة العربية) */}
+      {/* ترحيب + فلترة المناطق */}
       {!isMainAgent ? (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(280px,420px)] gap-6 mb-6">
+        <div className="mb-6">
           <div className="rounded-3xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-[0_20px_50px_-12px_rgba(15,23,42,0.1)] dark:shadow-[0_20px_50px_-12px_rgba(0,0,0,0.35)] overflow-hidden">
             <div className="p-5 sm:p-7 lg:p-8 bg-gradient-to-br from-sky-50 to-white dark:from-slate-800/80 dark:to-gray-800">
               <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:justify-between">
@@ -756,16 +759,6 @@ const DashboardPage: React.FC = () => {
               )}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleBalanceClick}
-            className="block w-full text-right rounded-3xl focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#f4f6f9] dark:focus-visible:ring-offset-gray-950"
-          >
-            <DashboardBalanceCreditCard
-              formattedAmount={formatNumber(balanceAmountIqd)}
-              subtitle={selectedResellerId ? 'رصيد المنطقة المحددة' : 'الرصيد العام'}
-            />
-          </button>
         </div>
       ) : (
         <div className="rounded-3xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-[0_20px_50px_-12px_rgba(15,23,42,0.1)] dark:shadow-[0_20px_50px_-12px_rgba(0,0,0,0.35)] mb-6 overflow-hidden">
@@ -859,17 +852,33 @@ const DashboardPage: React.FC = () => {
         </section>
       )}
 
-      {/* Stats Cards — من GET /Subscribers/dashboard (غير الوكيل الرئيسي) */}
+      {/* Stats Cards — من GET /api/subscribers/dashboard (غير الوكيل الرئيسي) */}
       {!isMainAgent && (
       <>
       {dashboardStatsSummaryVisible && (
+        <DashboardSubscriberStatsCards
+          stats={stats}
+          isLoading={statsLoading}
+          formatNumber={(n) => formatNumber(n)}
+          cards={subscriberStatCards}
+          showMeta={pythonBackend}
+        />
+      )}
+
+      {dashboardStatsSummaryVisible && (
         <div className="mb-6 rounded-3xl border border-gray-100 bg-white p-5 shadow-[0_20px_50px_-12px_rgba(15,23,42,0.1)] dark:border-gray-700 dark:bg-gray-800 dark:shadow-[0_20px_50px_-12px_rgba(0,0,0,0.35)] sm:p-6">
           <h3 className="mb-4 text-sm font-bold text-gray-900 dark:text-white">ملخص المبالغ</h3>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-gray-100 bg-gray-50/80 p-4 text-right dark:border-gray-700 dark:bg-gray-900/40">
-              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">مبالغ الاشتراكات</p>
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">مجموع مبالغ التفعيلات</p>
               <p className="mt-2 text-xl font-bold tabular-nums text-gray-900 dark:text-white">
-                {statsLoading ? '…' : `${formatNumber(Number(stats?.incomingAmount ?? 0))} د.ع`}
+                {statsLoading ? '…' : `${formatNumber(Number(stats?.totalActivationsAmount ?? stats?.incomingAmount ?? 0))} د.ع`}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-gray-100 bg-gray-50/80 p-4 text-right dark:border-gray-700 dark:bg-gray-900/40">
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">مجموع الديون (من التفعيلات credit)</p>
+              <p className="mt-2 text-xl font-bold tabular-nums text-gray-900 dark:text-white">
+                {statsLoading ? '…' : `${formatNumber(Number(stats?.totalDebtAmount ?? 0))} د.ع`}
               </p>
             </div>
             <div className="rounded-2xl border border-gray-100 bg-gray-50/80 p-4 text-right dark:border-gray-700 dark:bg-gray-900/40">

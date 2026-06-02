@@ -29,7 +29,6 @@ const PackagesPage = lazy(() => import('./pages/PackagesPage'));
 const CardsPage = lazy(() => import('./pages/CardsPage'));
 const AgentsPage = lazy(() => import('./pages/AgentsPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
-const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const SystemLogPage = lazy(() => import('./pages/SystemLogPage'));
 const ReceiptsPage = lazy(() => import('./pages/ReceiptsPage'));
 const DebtsPage = lazy(() => import('./pages/DebtsPage'));
@@ -51,7 +50,6 @@ const MainAgentSubAgentRenewalsPage = lazy(() => import('./pages/MainAgentSubAge
 const MainAgentSubAgentDebtsPage = lazy(() => import('./pages/MainAgentSubAgentDebtsPage'));
 const MainAgentSubAgentDailyAccountPage = lazy(() => import('./pages/MainAgentSubAgentDailyAccountPage'));
 const CustomerInvoicesPage = lazy(() => import('./pages/CustomerInvoicesPage'));
-const AppSubscribersAccountsPage = lazy(() => import('./pages/AppSubscribersAccountsPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -305,20 +303,8 @@ function App() {
                   } />
                   */}
                   
-                  <Route path="reports" element={
-                    <ProtectedRoute allowedRoles={[UserRole.Admin, UserRole.Agent, UserRole.SubAgent, UserRole.Employee]}>
-                      <RestrictedEmployeeRoute routePath="reports">
-                        <ReportsPage />
-                      </RestrictedEmployeeRoute>
-                    </ProtectedRoute>
-                  } />
-                  <Route path="reports/app-subscribers" element={
-                    <ProtectedRoute allowedRoles={[UserRole.Admin, UserRole.Agent, UserRole.SubAgent, UserRole.Employee]}>
-                      <RestrictedEmployeeRoute routePath="reports">
-                        <AppSubscribersAccountsPage />
-                      </RestrictedEmployeeRoute>
-                    </ProtectedRoute>
-                  } />
+                  <Route path="reports" element={<Navigate to="/admin/subscribers" replace />} />
+                  <Route path="reports/app-subscribers" element={<Navigate to="/admin/subscribers" replace />} />
 
                   <Route path="activity-log" element={
                     <ProtectedRoute allowedRoles={[UserRole.Admin, UserRole.Agent, UserRole.SubAgent]}>

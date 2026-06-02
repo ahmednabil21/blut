@@ -14,7 +14,8 @@ export function useMyAgent(enabled = true): UseQueryResult<Agent, Error> {
   return useQuery({
     queryKey: MY_AGENT_QUERY_KEY,
     queryFn: () => apiService.getMyAgent(),
-    enabled,
+    // معطّل مؤقتاً: endpoint /Agents/me غير متاح على الباكند الحالي.
+    enabled: false && enabled,
     staleTime: 30 * 60 * 1000,
     gcTime: 60 * 60 * 1000,
     refetchOnMount: false,

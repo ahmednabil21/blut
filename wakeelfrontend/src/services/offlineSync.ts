@@ -308,11 +308,12 @@ export async function fetchProfilesWithCache(
 /** جلب إحصائيات لوحة التحكم: من الـ API أو من الكاش عند الفشل/عدم الاتصال. عند نجاح الطلب نُخزّن الإحصائيات لاستخدامها أوفلاين (حتى يبقى عدد المشتركين صحيحاً). */
 export async function fetchDashboardWithCache(
   online: boolean,
-  params?: { agentId?: string; fromDate?: string; toDate?: string; resellerId?: string }
+  params?: { agentId?: string; fromDate?: string; toDate?: string; resellerId?: string },
+  refresh?: boolean
 ): Promise<SubscribersDashboardStats> {
   if (online) {
     try {
-      const stats = await apiService.getSubscribersDashboard(params);
+      const stats = await apiService.getSubscribersDashboard({ ...params, refresh });
       setDashboardStatsCache(stats);
       return stats;
     } catch {
@@ -501,12 +502,39 @@ export async function fetchAllSubscribersForDisbursePicker(online: boolean): Pro
   return Array.from(byId.values());
 }
 
-/** جلب الديون: من الـ API عند الاتصال (مع التخزين المؤقت)، أو من IndexedDB عند الانقطاع. عند فشل الطلب نعود للكاش إن وُجد. */
+/** جلب الديون:
+ * - Python backend: لا نعرض كاش محلي لتجنب ظهور بيانات قديمة/وهمية.
+ * - غير Python: API عند الاتصال + fallback إلى IndexedDB عند الانقطاع/الفشل.
+ */
 export async function fetchDebtsWithCache(
   online: boolean,
   params: DebtsListParams,
   useOverdue: boolean
 ): Promise<DebtsListResponse> {
+  const empty = (): DebtsListResponse => ({
+    data: [],
+    currentPage: 1,
+    pageSize: params.pageSize ?? 10,
+    totalItems: 0,
+    totalPages: 0,
+    hasNextPage: false,
+    hasPreviousPage: false,
+    totalCount: 0,
+    pageNumber: 1,
+  });
+
+  // Python mode: لا تعتمد على الكاش المحلي في صفحة الديون.
+  if (isPythonBackend()) {
+    if (!online) return empty();
+    try {
+      return useOverdue
+        ? await apiService.getOverdueUnpaidDebts(params)
+        : await apiService.getAllDebts(params);
+    } catch {
+      return empty();
+    }
+  }
+
   const fallback = async (): Promise<DebtsListResponse> => {
     const cached = await getCachedDebts();
     return {

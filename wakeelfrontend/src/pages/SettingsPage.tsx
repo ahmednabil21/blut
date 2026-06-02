@@ -68,7 +68,6 @@ import {
   Sparkles,
   Search,
   Activity,
-  Receipt,
 } from 'lucide-react';
 import { InvoicePrintTemplateSettings } from '../components/settings/InvoicePrintTemplateSettings';
 import {
@@ -3462,34 +3461,6 @@ function SettingsPage() {
                 >
                   <MessageSquare className="h-5 w-5 flex-shrink-0" />
                   <span>قالب رسالة خاصة</span>
-                </button>
-              )}
-              {canInvoicePrintSettings && (
-                <button
-                  type="button"
-                  onClick={() => setActiveSection('invoicePrintActivation')}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 text-right rounded-lg transition-colors ${
-                    activeSection === 'invoicePrintActivation'
-                      ? 'bg-primary-100 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  <Receipt className="h-5 w-5 flex-shrink-0" />
-                  <span>فاتورة التفعيل (طباعة)</span>
-                </button>
-              )}
-              {canInvoicePrintSettings && (
-                <button
-                  type="button"
-                  onClick={() => setActiveSection('invoicePrintSales')}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 text-right rounded-lg transition-colors ${
-                    activeSection === 'invoicePrintSales'
-                      ? 'bg-primary-100 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  <Receipt className="h-5 w-5 flex-shrink-0" />
-                  <span>فاتورة المبيعات (طباعة)</span>
                 </button>
               )}
               {isAdmin && (

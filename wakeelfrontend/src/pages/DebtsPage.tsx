@@ -61,6 +61,32 @@ function normalizeEarthlinkActivationUrl(url: string | undefined): string | unde
   return u;
 }
 
+function getDebtStatusText(status: number): string {
+  switch (status) {
+    case 0:
+      return 'غير مسدد';
+    case 1:
+      return 'مسدد';
+    case 2:
+      return 'مسدد جزئي';
+    default:
+      return 'غير محدد';
+  }
+}
+
+function getDebtStatusColor(status: number): string {
+  switch (status) {
+    case 0:
+      return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400';
+    case 1:
+      return 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400';
+    case 2:
+      return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400';
+    default:
+      return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400';
+  }
+}
+
 const DebtsPage: React.FC = () => {
   const { user } = useAuth();
   const { online, refreshPendingCount } = useOffline();
@@ -329,7 +355,7 @@ const DebtsPage: React.FC = () => {
   const transformedDebts = debts.map((debt: Debt) => ({
     ...debt,
     dueDate: debt.dueDate ?? '',
-    isPaid: debt.isPaid ?? false,
+    isPaid: debt.isPaid ?? debt.status === DebtStatus.Paid,
     agentName: debt.agentName || debt.agentCompanyName || 'غير محدد',
     status: debt.status ?? 0
   }));
@@ -1047,8 +1073,9 @@ const DebtsPage: React.FC = () => {
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white text-sm"
                 >
                   <option value="">الكل</option>
-                  <option value={DebtStatus.Unpaid}>غير مدفوع</option>
-                  <option value={DebtStatus.Paid}>مدفوع</option>
+                  <option value={DebtStatus.Unpaid}>غير مسدد</option>
+                  <option value={DebtStatus.Paid}>مسدد</option>
+                  <option value={DebtStatus.Partial}>مسدد جزئي</option>
                 </select>
               </div>
               <div>
@@ -2011,22 +2038,23 @@ const DebtsPage: React.FC = () => {
                 </label>
                 <div className="flex items-center space-x-2">
                   <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                    selectedDebt.isPaid 
-                      ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
-                      : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
+                    getDebtStatusColor(selectedDebt.status ?? 0)
                   }`}>
-                    {selectedDebt.isPaid ? 'مدفوع' : 'غير مدفوع'}
+                    {getDebtStatusText(selectedDebt.status ?? 0)}
                   </span>
                 </div>
               </div>
 
-              {selectedDebt.paidDate && (
+              {(selectedDebt.paymentCreatedAt || selectedDebt.paidDate) && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     تاريخ الدفع
                   </label>
                   <p className="text-sm text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-700 p-2 rounded">
-                    {formatDate(selectedDebt.paidDate)}
+                    {(() => {
+                      const paidAt = selectedDebt.paymentCreatedAt || selectedDebt.paidDate;
+                      return paidAt ? formatDate(paidAt) : '—';
+                    })()}
                   </p>
                 </div>
               )}
@@ -2208,31 +2236,9 @@ const DebtsPage: React.FC = () => {
                             : '—'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          {(() => {
-                            const getDebtStatusText = (status: number) => {
-                              switch (status) {
-                                case 0: return 'غير مدفوع';
-                                case 1: return 'مدفوع';
-                                case 2: return 'مدفوع جزئياً';
-                                default: return 'غير محدد';
-                              }
-                            };
-                            
-                            const getDebtStatusColor = (status: number) => {
-                              switch (status) {
-                                case 0: return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400';
-                                case 1: return 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400';
-                                case 2: return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400';
-                                default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400';
-                              }
-                            };
-                            
-                            return (
-                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getDebtStatusColor(debt.status)}`}>
-                                {getDebtStatusText(debt.status)}
-                              </span>
-                            );
-                          })()}
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getDebtStatusColor(debt.status)}`}>
+                            {getDebtStatusText(debt.status)}
+                          </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           {(() => {
@@ -2288,7 +2294,7 @@ const DebtsPage: React.FC = () => {
                                   <Trash2 className="h-4 w-4" />
                                   <span>حذف</span>
                                 </button>
-                                {debt.isPaid && <span className="text-gray-400 text-xs">مدفوع</span>}
+                                {debt.status === DebtStatus.Paid && <span className="text-gray-400 text-xs">مسدد</span>}
                               </>
                             ) : (
                               <span className="text-gray-400">—</span>

@@ -1024,7 +1024,9 @@ class ApiService {
    * يستخدم نفس جلسة الواتساب للوكيل والموظفين التابعين له
    */
   async getMyAgent(): Promise<Agent> {
-    const response: AxiosResponse<Agent> = await this.api.get('/Agents/me');
+    const response: AxiosResponse<Agent> = await this.api.get('/Agents/me', {
+      baseURL: this.getNoApiBaseURL(),
+    });
     return response.data;
   }
 
@@ -1425,7 +1427,7 @@ class ApiService {
       isPaid: debt.status === 1,
       agentId: debt.agentId || '',
       agentName: debt.agentCompanyName || 'غير محدد',
-      paidDate: undefined,
+      paidDate: debt.paymentCreatedAt ?? debt.paidDate ?? undefined,
       status: debt.status ?? 0,
     }));
     return { ...raw, data: transformedData };
@@ -1541,6 +1543,7 @@ class ApiService {
     if (typeof params?.status === 'number') queryParams.status = params.status;
     if (params?.agentId?.trim()) queryParams.agentId = params.agentId.trim();
     const response = await this.api.get<import('../types').EmployeeTasksAgentPageDto>('/EmployeeTasks/agent', {
+      baseURL: this.getNoApiBaseURL(),
       params: queryParams,
     });
     const d = response.data as import('../types').EmployeeTasksAgentPageDto & Record<string, unknown>;
@@ -1737,6 +1740,7 @@ class ApiService {
   // Profile/Package endpoints
   async getProfiles(params?: ProfileListParams): Promise<PaginatedResponse<Profile>> {
     const response: AxiosResponse<PaginatedResponse<Profile> | Profile[]> = await this.api.get('/subscribers/profiles', {
+      baseURL: this.getNoApiBaseURL(),
       params: params ? {
         page: params.page,
         pageSize: params.pageSize,
@@ -2889,9 +2893,62 @@ class ApiService {
 
 
   /** إحصائيات المشتركين للوحة التحكم + الوارد */
-  async getSubscribersDashboard(params?: { agentId?: string; fromDate?: string; toDate?: string; resellerId?: string }): Promise<SubscribersDashboardStats> {
-    const response: AxiosResponse<SubscribersDashboardStats> = await this.api.get('/subscribers/dashboard', { params });
-    return response.data;
+  async getSubscribersDashboard(params?: {
+    agentId?: string;
+    fromDate?: string;
+    toDate?: string;
+    resellerId?: string;
+    /** تجاوز كاش SAS (5 دقائق) — عند زر «تحديث» */
+    refresh?: boolean;
+  }): Promise<SubscribersDashboardStats> {
+    const response = await this.api.get<Record<string, unknown>>('/subscribers/dashboard', {
+      params: {
+        ...(params?.fromDate ? { fromDate: params.fromDate } : {}),
+        ...(params?.toDate ? { toDate: params.toDate } : {}),
+        ...(params?.refresh ? { refresh: true } : {}),
+      },
+    });
+    const b = response.data ?? {};
+    return {
+      total: Number(b.total ?? b.Total ?? 0),
+      active: Number(b.active ?? b.Active ?? 0),
+      online: Number(b.online ?? b.Online ?? 0),
+      offline: Number(b.offline ?? b.Offline ?? 0),
+      expired: Number(b.expired ?? b.Expired ?? 0),
+      expiringWithin3Days: Number(
+        b.expiringWithin3Days ?? b.expiring_within_3_days ?? b.ExpiringWithin3Days ?? 0
+      ),
+      incomingAmount: Number(b.incomingAmount ?? b.incoming_amount ?? b.totalActivationsAmount ?? b.total_activations_amount ?? 0) || undefined,
+      totalActivationsAmount: Number(b.totalActivationsAmount ?? b.total_activations_amount ?? b.incomingAmount ?? 0) || undefined,
+      totalActivationProfit: Number(b.totalActivationProfit ?? b.total_activation_profit ?? 0) || undefined,
+      totalProfitAmount: Number(b.totalProfitAmount ?? b.total_profit_amount ?? 0) || undefined,
+      totalDebtAmount: Number(b.totalDebtAmount ?? b.total_debt_amount ?? 0) || undefined,
+      incomingFromDate: (b.incomingFromDate ?? b.incoming_from_date) as string | null | undefined,
+      incomingToDate: (b.incomingToDate ?? b.incoming_to_date) as string | null | undefined,
+      totalMaterialSales: Number(b.totalMaterialSales ?? b.total_material_sales ?? 0) || undefined,
+      sasOnlineUsers:
+        b.sasOnlineUsers != null
+          ? Number(b.sasOnlineUsers)
+          : b.sas_online_users != null
+            ? Number(b.sas_online_users)
+            : b.online != null
+              ? Number(b.online)
+              : null,
+      source: typeof b.source === 'string' ? b.source : null,
+      cached: b.cached === true,
+      cacheTtlSec:
+        b.cache_ttl_sec != null
+          ? Number(b.cache_ttl_sec)
+          : b.cacheTtlSec != null
+            ? Number(b.cacheTtlSec)
+            : undefined,
+      cacheExpiresInSec:
+        b.cache_expires_in_sec != null
+          ? Number(b.cache_expires_in_sec)
+          : b.cacheExpiresInSec != null
+            ? Number(b.cacheExpiresInSec)
+            : null,
+    };
   }
 
   // Dashboard stats (قديم — للتوافق إن استُدعي من مكان آخر)
@@ -2985,10 +3042,32 @@ class ApiService {
     return queryParams;
   }
 
+  /** بعض المسارات في الباكند تعمل بدون بادئة /api */
+  private getNoApiBaseURL(): string {
+    const base = String(this.api.defaults.baseURL ?? getApiBaseUrl()).trim();
+    return base.replace(/\/api\/?$/i, '');
+  }
+
+  private debtsGet<T = unknown>(url: string, params?: Record<string, unknown>): Promise<AxiosResponse<T>> {
+    return this.api.get<T>(url, { baseURL: this.getNoApiBaseURL(), params });
+  }
+
+  private debtsPost<T = unknown>(url: string, data?: unknown): Promise<AxiosResponse<T>> {
+    return this.api.post<T>(url, data, { baseURL: this.getNoApiBaseURL() });
+  }
+
+  private debtsPut<T = unknown>(url: string, data?: unknown): Promise<AxiosResponse<T>> {
+    return this.api.put<T>(url, data, { baseURL: this.getNoApiBaseURL() });
+  }
+
+  private debtsDelete(url: string): Promise<AxiosResponse<void>> {
+    return this.api.delete<void>(url, { baseURL: this.getNoApiBaseURL() });
+  }
+
   // Debt Management — يدعم فلترة: searchTerm, sortBy, sortDescending, DebtStatus, DebtDescription, DueDateFrom, DueDateTo, إلخ
   async getAllDebts(params?: DebtsListParams): Promise<DebtsListResponse> {
     const queryParams = this.buildDebtsQueryParams(params);
-    const response = await this.api.get('/Debts', { params: queryParams });
+    const response = await this.debtsGet<DebtsListResponse & { data: any[] }>('/Debts', queryParams);
     const raw = response.data as DebtsListResponse & { data: any[] };
 
     const transformedData = (raw.data || []).map((debt: any) => ({
@@ -3009,81 +3088,86 @@ class ApiService {
 
   async getOverdueUnpaidDebts(params?: DebtsListParams): Promise<DebtsListResponse> {
     const queryParams = this.buildDebtsQueryParams(params);
-    const response = await this.api.get('/Debts/overdue-unpaid', { params: queryParams });
+    const response = await this.debtsGet<DebtsListResponse & { data: any[] }>('/Debts/overdue-unpaid', queryParams);
     const raw = response.data as DebtsListResponse & { data: any[] };
     const transformedData = (raw.data || []).map((debt: any) => ({
       ...debt,
       isPaid: debt.status === 1,
       agentId: debt.agentId || '',
       agentName: debt.agentCompanyName || debt.agentName || 'غير محدد',
-      paidDate: undefined,
+      paidDate: debt.paymentCreatedAt ?? debt.paidDate ?? undefined,
       status: debt.status ?? 0,
     }));
     return { ...raw, data: transformedData, totalDebtAmount: raw.totalDebtAmount };
   }
 
   async getSubscriberDebts(subscriberId: string, params?: PaginationParams): Promise<PaginatedResponse<Debt>> {
-    const response = await this.api.get(`/Debts/subscriber/${subscriberId}`, { params });
+    const response = await this.debtsGet<PaginatedResponse<Debt>>(`/Debts/subscriber/${subscriberId}`, params as Record<string, unknown> | undefined);
     const transformedData = (response.data?.data || []).map((debt: any) => ({
       ...debt,
       isPaid: debt.status === 1,
       agentId: debt.agentId || '',
       agentName: debt.agentCompanyName || debt.agentName || 'غير محدد',
+      paidDate: debt.paymentCreatedAt ?? debt.paidDate ?? undefined,
       status: debt.status || 0,
     }));
     return { ...response.data, data: transformedData };
   }
 
   async getDebt(id: string): Promise<Debt> {
-    const response = await this.api.get(`/Debts/${id}`);
+    const response = await this.debtsGet<Debt>(`/Debts/${id}`);
     return {
       ...response.data,
-      isPaid: response.data.status === 1, // Paid status
-      status: response.data.status || 0 // Default to Unpaid if not provided
+      isPaid: response.data.status === 1,
+      paidDate: response.data.paymentCreatedAt ?? response.data.paidDate ?? undefined,
+      status: response.data.status || 0
     };
   }
 
   async createDebt(debtData: DebtCreateRequest): Promise<Debt> {
-    const response = await this.api.post('/Debts', debtData);
+    const response = await this.debtsPost<Debt>('/Debts', debtData);
     return {
       ...response.data,
-      isPaid: response.data.status === 1, // Paid status
-      status: response.data.status || 0 // Default to Unpaid if not provided
+      isPaid: response.data.status === 1,
+      paidDate: response.data.paymentCreatedAt ?? response.data.paidDate ?? undefined,
+      status: response.data.status || 0
     };
   }
 
   async updateDebt(id: string, debtData: DebtUpdateRequest): Promise<Debt> {
-    const response = await this.api.put(`/Debts/${id}`, debtData);
+    const response = await this.debtsPut<Debt>(`/Debts/${id}`, debtData);
     return {
       ...response.data,
-      isPaid: response.data.status === 1, // Paid status
-      status: response.data.status || 0 // Default to Unpaid if not provided
+      isPaid: response.data.status === 1,
+      paidDate: response.data.paymentCreatedAt ?? response.data.paidDate ?? undefined,
+      status: response.data.status || 0
     };
   }
 
   async payDebt(id: string, paymentData: DebtPaymentRequest): Promise<Debt> {
     console.log('API: payDebt called with:', { id, paymentData });
-    const response = await this.api.post(`/Debts/${id}/pay`, paymentData);
+    const response = await this.debtsPost<Debt>(`/Debts/${id}/pay`, paymentData);
     console.log('API: payDebt response:', response.data);
     return {
       ...response.data,
-      isPaid: response.data.status === 1, // Paid status
-      status: response.data.status || 0 // Default to Unpaid if not provided
+      isPaid: response.data.status === 1,
+      paidDate: response.data.paymentCreatedAt ?? response.data.paidDate ?? undefined,
+      status: response.data.status || 0
     };
   }
 
   async deleteDebt(id: string): Promise<void> {
-    await this.api.delete(`/Debts/${id}`);
+    await this.debtsDelete(`/Debts/${id}`);
   }
 
   async getSubscriberDebtTotal(subscriberId: string): Promise<number> {
-    const response = await this.api.get(`/Debts/subscriber/${subscriberId}/total`);
+    const response = await this.debtsGet<number>(`/Debts/subscriber/${subscriberId}/total`);
     return Number(response.data ?? 0) || 0;
   }
 
   /** تحديث حالة إطفاء/تشغيل لجميع ديون المشترك (0 = إطفاء، 1 = تشغيل) */
   async putSubscriberOffOn(subscriberId: string, offOn: 0 | 1): Promise<{ updatedCount: number; offOn: number }> {
-    const response = await this.api.put(`/Debts/subscriber/${subscriberId}/offon`, { offOn });
+    const response = await this.debtsPut<{ updatedCount: number; offOn: number }>(`/Debts/subscriber/${subscriberId}/offon`, { offOn });
     return response.data;
   }
 
@@ -3395,7 +3479,9 @@ class ApiService {
       const st = (searchTerm ?? '').trim();
       if (st) params.set('searchTerm', st);
 
-      const response: AxiosResponse<PaginatedResponse<RenewalReceipt>> = await this.api.get(`/Renewals?${params.toString()}`);
+      const response: AxiosResponse<PaginatedResponse<RenewalReceipt>> = await this.api.get(`/Renewals?${params.toString()}`, {
+        baseURL: this.getNoApiBaseURL(),
+      });
       console.log('API Response from backend:', response.data);
       console.log('Response status:', response.status);
       
@@ -4148,7 +4234,9 @@ class ApiService {
   // System Message - GET (called when opening login page; no auth required for active message)
   async getSystemMessage(): Promise<SystemMessageResponse | null> {
     try {
-      const response: AxiosResponse<SystemMessageResponse> = await this.api.get('/SystemMessage');
+      const response: AxiosResponse<SystemMessageResponse> = await this.api.get('/SystemMessage', {
+        baseURL: this.getNoApiBaseURL(),
+      });
       if (response.data?.message && response.data?.expiresAt) {
         const expiresAt = new Date(response.data.expiresAt).getTime();
         if (expiresAt > Date.now()) return response.data;
@@ -4161,7 +4249,9 @@ class ApiService {
 
   // System Message - POST (Admin only)
   async createSystemMessage(data: SystemMessageCreateRequest): Promise<SystemMessageResponse> {
-    const response: AxiosResponse<SystemMessageResponse> = await this.api.post('/SystemMessage', data);
+    const response: AxiosResponse<SystemMessageResponse> = await this.api.post('/SystemMessage', data, {
+      baseURL: this.getNoApiBaseURL(),
+    });
     return response.data;
   }
 

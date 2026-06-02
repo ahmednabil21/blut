@@ -5,7 +5,7 @@ import Lottie from 'lottie-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Eye, EyeOff, User, Lock, AlertTriangle, RefreshCw } from 'lucide-react';
 import WifiLoaderComponent from '../components/WifiLoaderComponent';
-import { apiService, ApiService } from '../services/api';
+import { ApiService } from '../services/api';
 import { showSuccess } from '../utils/notifications';
 import isometricDataAnalysisAnimation from '../images/Isometric data analysis.json';
 
@@ -55,10 +55,6 @@ const LoginPage: React.FC = () => {
     }
   }, []);
 
-  // استدعاء رسالة النظام عند فتح صفحة تسجيل الدخول (حسب المواصفات)
-  useEffect(() => {
-    apiService.getSystemMessage().catch(() => {});
-  }, []);
 
   // إذا كان المستخدم مصادقاً بالفعل، لا تبقى في صفحة تسجيل الدخول
   useEffect(() => {

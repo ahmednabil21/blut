@@ -2228,6 +2228,8 @@ export interface SubscribersDashboardStats {
   expired: number;
   /** مجموع amountPaid ضمن فترة الوارد */
   incomingAmount?: number;
+  /** مجموع مبالغ التفعيلات ضمن الفترة (من SAS) */
+  totalActivationsAmount?: number;
   /** مجموع ربح التفعيل (FinalPrice − OriginalPrice) ضمن نفس فترة الوارد والفلاتر */
   totalActivationProfit?: number;
   /** مجموع ربح تحويلات الوكلاء ضمن نفس فترة fromDate/toDate (مطابق لمجموع الربح في قائمة التحويلات عند نفس الفترة) */
@@ -2246,6 +2248,11 @@ export interface SubscribersDashboardStats {
   sasBalance?: string | null;
   /** عدد المشتركين الأونلاين حالياً من لوحة SAS — يظهر فقط لوكيل نوعه SAS */
   sasOnlineUsers?: number | null;
+  /** مصدر البيانات — مثلاً sas_widgets */
+  source?: string | null;
+  cached?: boolean;
+  cacheTtlSec?: number;
+  cacheExpiresInSec?: number | null;
 }
 
 /** نوع الحركة في سجل النشاط */
