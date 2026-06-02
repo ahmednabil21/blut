@@ -1440,7 +1440,14 @@ export interface ActivationInvoicePrintSettingsDto {
 
 /** نص تذييل افتراضي (يتوافق مع القيم الافتراضية في الباكند) */
 export const DEFAULT_INVOICE_PRINT_FOOTER_LEGAL =
-  'شركة انجاز لادارة الانظمة والحلول البرمجية 2026';
+  'شركة انجاز لادارة الانظمة والحلول البرمجية 2024';
+
+/** تنبيه قانوني افتراضي على وصل التفعيل (نموذج POS 80mm) */
+export const DEFAULT_ACTIVATION_RECEIPT_BORROW_DAY_NOTE =
+  'علماً ان اقتراض يوم من الاشتراك يكون محسوب ضمن البطاقة التي تكون صالحة لمدة 30 يوم';
+
+/** كلمة مرور المشترك على وصل SAS — Blue TI */
+export const SAS_BLUE_TI_RECEIPT_PASSWORD = '2211';
 
 /** إعدادات قالب فاتورة المبيعات — نفس حقول التفعيل + تسميات الجدول والملخص + مظهر الطباعة (المرحلة 1) */
 export interface SalesInvoicePrintSettingsDto extends ActivationInvoicePrintSettingsDto {

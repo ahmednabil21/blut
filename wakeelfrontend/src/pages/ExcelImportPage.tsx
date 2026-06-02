@@ -186,7 +186,7 @@ const ExcelImportPage: React.FC = () => {
     // IMPORTANT: backend reads columns by position, not by header name
     const templateData = [
       ['Username', 'FirstName', 'LastName', 'ActivationDate', 'Expire', 'Profile', 'Password', 'Phone', 'SecruptionId', 'FDT', 'FAT', 'Zone'],
-      ['ahmed123', 'أحمد', 'محمد', '2026-02-10', '2026-03-10', 'العادي', 'password123', '07901234567', '1212', '', '', 'المنطقة الأولى']
+      ['ahmed123', 'أحمد', 'محمد', '2024-02-10', '2024-03-10', 'العادي', 'password123', '07901234567', '1212', '', '', 'المنطقة الأولى']
     ];
     const blob = createXlsxBlob(templateData, 'المشتركين');
     const link = document.createElement('a');
@@ -331,8 +331,8 @@ const ExcelImportPage: React.FC = () => {
           desktopSize="150px"
           mobileSize="150px"
           text="تحميل الوكلاء..."
-          backColor="#E8F2FC"
-          frontColor="#4645F6"
+          backColor="#dff2f8"
+          frontColor="#4AB1D4"
         />
       </div>
     );

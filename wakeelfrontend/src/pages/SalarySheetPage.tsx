@@ -414,8 +414,8 @@ const SalarySheetPage: React.FC = () => {
           desktopSize="120px"
           mobileSize="100px"
           text="تحميل كشف الرواتب..."
-          backColor="#E8F2FC"
-          frontColor="#4645F6"
+          backColor="#dff2f8"
+          frontColor="#4AB1D4"
         />
       </div>
     );

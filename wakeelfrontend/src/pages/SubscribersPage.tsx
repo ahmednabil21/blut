@@ -58,6 +58,9 @@ import {
 import { Subscriber, SubscriptionStatus, SubscriptionType, SubscriberCreateRequest, Profile, RenewalData, RenewalActivationMode, PaymentStatus, PaginatedResponse, PaginationParams, UserRole, ServiceType, SubscriberNoteType, EARTHLINK_USER_MANAGEMENT_URL, AgentReseller, ProfilePackageType, formatServiceTypeLabelAr, SUBSCRIBER_FETCH_LIMIT_PRESETS, type SubscriberFetchLimitOption, type CashbackSynchronizationFtthResponse, type CashbackSynchronizationFtthRow, type ZainfiSubscriberDiffResponse, type ZainfiSubscriberDiffItem, type ZainfiApplyExternalExpirationRequest, type ActivationInvoicePrintSettingsDto, type BalanceTopUpRequest, type Dealer, type SubscriberNoteTypeOption, User } from '../types';
 import {
   buildActivationReceiptPrintHtml,
+  embedActivationReceiptStaticImages,
+  enrichActivationPrintPayload,
+  openActivationReceiptPrintWindow,
   renewalLikeToActivationPrintPayload,
 } from '../utils/activationReceiptPrintHtml';
 import { getBaghdadDefaultExportRangeLast30Days, getBaghdadRangeBoundsIso, getBaghdadTodayYmd } from '../utils/iraqCalendar';
@@ -82,6 +85,7 @@ import {
   RefreshCw,
   MoreHorizontal,
   MessageCircle,
+  Printer,
   ExternalLink,
   Settings2,
   FileText,
@@ -2284,21 +2288,12 @@ const SubscribersPage: React.FC = () => {
   };
 
   const handlePrintReceipt = async (receipt: any) => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('يرجى السماح بالنوافذ المنبثقة (Pop-ups) لطباعة الفاتورة');
-      return;
-    }
-
     const agentIdForTemplate =
       subscribers?.find((s) => s.id === receipt.subscriberId)?.agentId?.trim() ||
       (user?.role === UserRole.Admin ? myAgent?.id : undefined) ||
       myAgent?.id;
 
-    const printBase = {
-      appOrigin: typeof window !== 'undefined' ? window.location.origin : '',
-      apiBaseUrl: apiService.getBaseURL(),
-    };
+    const appOrigin = typeof window !== 'undefined' ? window.location.origin : '';
 
     let settings: ActivationInvoicePrintSettingsDto = {};
     try {
@@ -2307,37 +2302,43 @@ const SubscribersPage: React.FC = () => {
       settings = {};
     }
 
-    const printContent = buildActivationReceiptPrintHtml(
-      settings,
+    const sub = subscribers?.find((s) => s.id === receipt.subscriberId);
+    const linkedReseller =
+      myResellers.find((r) => r.id === (sub?.agentResellerId ?? '').trim()) ??
+      myResellers.find((r) => r.id === selectedOperationalResellerId);
+    const printPayload = enrichActivationPrintPayload(
       renewalLikeToActivationPrintPayload(receipt as Record<string, unknown>),
       {
-        formatDate,
-        locale,
-        ...printBase,
-        fallbackOrganizerName: (user?.fullName || user?.username || '').trim() || undefined,
+        username: sub?.username,
+        deviceUsername: sub?.deviceUsername,
+        paymentMethod: sub?.paymentMethod,
+        serviceType: linkedReseller?.serviceType ?? myAgent?.serviceType,
+        resellerName: sub?.agentResellerName ?? linkedReseller?.name,
+        agentCompanyName: sub?.agentCompanyName ?? myAgent?.companyName ?? receipt.agentCompanyName,
       }
     );
 
-    printWindow.document.write(printContent);
-    printWindow.document.close();
-    
-    let printInvoked = false;
-    const doPrintOnce = () => {
-      if (printInvoked) return;
-      printInvoked = true;
-      printWindow.focus();
-      printWindow.print();
-      const closeAfterPrint = () => {
-      printWindow.close();
-      };
-      if (typeof printWindow.onafterprint !== 'undefined') {
-        printWindow.onafterprint = closeAfterPrint;
-    } else {
-        setTimeout(closeAfterPrint, 1500);
-      }
-    };
+    const embeddedImages = await embedActivationReceiptStaticImages(appOrigin);
 
-    printWindow.onload = doPrintOnce;
+    const printContent = buildActivationReceiptPrintHtml(settings, printPayload, {
+      formatDate,
+      locale,
+      appOrigin,
+      embeddedImages,
+      fallbackOrganizerName: (user?.username || '').trim() || undefined,
+    });
+
+    try {
+      await openActivationReceiptPrintWindow(printContent);
+    } catch {
+      alert('تعذّر فتح نافذة الطباعة. حدّث الصفحة ثم أعد المحاولة.');
+    }
+  };
+
+  const handlePostActivationSaveAndPrint = async () => {
+    if (!lastReceipt) return;
+    setShowReceiptModal(false);
+    await handlePrintReceipt(lastReceipt);
   };
 
   const getWhatsAppReminderErrorMessage = (err: any): string => {
@@ -2887,8 +2888,8 @@ const SubscribersPage: React.FC = () => {
           desktopSize="150px"
           mobileSize="150px"
           text="تحميل المشتركين..."
-          backColor="#E8F2FC"
-          frontColor="#4645F6"
+          backColor="#dff2f8"
+          frontColor="#4AB1D4"
         />
       </div>
     );
@@ -4663,136 +4664,59 @@ const SubscribersPage: React.FC = () => {
         </div>
       )}
 
-      {/* Receipt Modal */}
+      {/* تنبيه بعد التفعيل: حفظ وطباعة / واتساب (لاحقاً) */}
       {showReceiptModal && lastReceipt && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
-            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                فاتورة التفعيل
-              </h2>
-              <button
-                onClick={() => setShowReceiptModal(false)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div
+            className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-sm mx-4 overflow-hidden"
+            role="alertdialog"
+            aria-labelledby="post-activation-title"
+            aria-describedby="post-activation-desc"
+          >
+            <div className="p-6 text-center">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
+                <Check className="h-6 w-6 text-green-600 dark:text-green-400" />
+              </div>
+              <h2
+                id="post-activation-title"
+                className="text-lg font-semibold text-gray-900 dark:text-white mb-2"
               >
-                <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
-              </button>
+                تم حفظ التفعيل بنجاح
+              </h2>
+              <p id="post-activation-desc" className="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                رقم الوصل: <span className="font-medium text-gray-900 dark:text-white">{lastReceipt.receiptNumber}</span>
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {lastReceipt.subscriberName}
+                {lastReceipt.newProfileName ? ` — ${lastReceipt.newProfileName}` : ''}
+              </p>
             </div>
-
-            <div className="p-6 space-y-4">
-              {/* Receipt Header */}
-              <div className="text-center border-b border-gray-200 dark:border-gray-700 pb-4">
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white">
-                  {(() => {
-                    console.log('Modal displaying receiptNumber:', lastReceipt.receiptNumber);
-                    console.log('Modal lastReceipt object:', lastReceipt);
-                    return lastReceipt.receiptNumber;
-                  })()}
-                </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {formatDate(lastReceipt.renewalDate)} - {new Date(lastReceipt.renewalDate).toLocaleTimeString(locale)}
-                </p>
-              </div>
-
-              {/* Subscriber Info */}
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">المشترك:</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{lastReceipt.subscriberName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">رقم الهاتف:</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{lastReceipt.subscriberPhone}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">الباقة:</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{lastReceipt.newProfileName}</span>
-                </div>
-              </div>
-
-              {/* Pricing Details */}
-              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 space-y-2">
-                {(lastReceipt.discountAmount ?? 0) > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-600 dark:text-gray-400">الخصم:</span>
-                    <span className="text-red-600 dark:text-red-400">-{formatNumber(lastReceipt.discountAmount ?? 0, { suffix: ' د.ع' })} ({(lastReceipt.discountPercent ?? 0).toFixed(1)}%)</span>
-                  </div>
-                )}
-                <div className="flex justify-between font-bold text-lg border-t border-gray-200 dark:border-gray-600 pt-2">
-                  <span className="text-gray-900 dark:text-white">سعر الاشتراك:</span>
-                  <span className="text-primary-600 dark:text-primary-400">{formatNumber(lastReceipt.finalPrice ?? 0, { suffix: ' د.ع' })}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">المبلغ الواصل:</span>
-                  <span className="text-green-600 dark:text-green-400">{formatNumber(lastReceipt.amountPaid ?? 0, { suffix: ' د.ع' })}</span>
-                </div>
-                  <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">مبلغ الدين:</span>
-                  <span className="text-red-600 dark:text-red-400">{formatNumber((lastReceipt.finalPrice ?? 0) - (lastReceipt.amountPaid ?? 0), { suffix: ' د.ع' })}</span>
-                  </div>
-              </div>
-
-              {/* Renewal Details */}
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">تاريخ الانتهاء الجديد:</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{formatDate(lastReceipt.newExpirationDate)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">ملاحظات الدين:</span>
-                  <span className="font-medium text-gray-900 dark:text-white">
-                    {((lastReceipt.finalPrice ?? 0) - (lastReceipt.amountPaid ?? 0)) > 0
-                      ? `الباقي من المبلغ: ${formatNumber((lastReceipt.finalPrice ?? 0) - (lastReceipt.amountPaid ?? 0), { suffix: ' د.ع' })}`
-                      : 'لا يوجد دين'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">حالة الدفع:</span>
-                  <span className={`font-medium ${
-                    lastReceipt.paymentStatus === 1 ? 'text-green-600 dark:text-green-400' :
-                    lastReceipt.paymentStatus === 2 ? 'text-red-600 dark:text-red-400' :
-                    'text-yellow-600 dark:text-yellow-400'
-                  }`}>
-                    {lastReceipt.paymentStatus === 1 ? 'مدفوع' :
-                     lastReceipt.paymentStatus === 2 ? 'غير مدفوع' : 'معلق'}
-                  </span>
-                </div>
-              </div>
-
-              {lastReceipt.notes && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
-                  <p className="text-sm text-blue-800 dark:text-blue-200">
-                    <span className="font-medium">ملاحظات:</span> {lastReceipt.notes}
-                  </p>
-                </div>
-              )}
-
-              {/* Actions */}
-              {!hasWhatsAppSession && (
-                <p className="text-sm text-amber-600 dark:text-amber-400 pt-2">لإرسال رسائل واتساب أضف معرف جلسة واتساب في الإعدادات.</p>
-              )}
-              <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <button
-                  onClick={() => setShowReceiptModal(false)}
-                  className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
-                >
-                  إغلاق
-                </button>
-                <button
-                  onClick={() => handleSendWhatsApp(lastReceipt)}
-                  disabled={!hasWhatsAppSession || !lastReceipt.subscriberId}
-                  className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <MessageCircle className="h-4 w-4" />
-                  <span>إرسال واتساب</span>
-                </button>
-                <button
-                  onClick={() => handlePrintReceipt(lastReceipt)}
-                  className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-md transition-colors"
-                >
-                  طباعة
-                </button>
-              </div>
+            <div className="flex flex-col gap-2 p-4 pt-0 border-t border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => void handlePostActivationSaveAndPrint()}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-3 text-sm font-semibold text-white hover:bg-primary-700 transition-colors"
+              >
+                <Printer className="h-4 w-4" />
+                <span>حفظ وطباعة</span>
+              </button>
+              <button
+                type="button"
+                disabled
+                title="سيتم تفعيل إرسال الواتساب لاحقاً"
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-600 px-4 py-3 text-sm font-medium text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-700/50 cursor-not-allowed"
+              >
+                <MessageCircle className="h-4 w-4" />
+                <span>حفظ وإرسال واتساب</span>
+                <span className="text-xs opacity-80">(قريباً)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowReceiptModal(false)}
+                className="w-full rounded-lg px-4 py-2.5 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                إغلاق
+              </button>
             </div>
           </div>
         </div>

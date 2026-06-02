@@ -14,8 +14,8 @@ export const WifiLoaderComponent: React.FC<WifiLoaderProps> = ({
   desktopSize = "150px",
   mobileSize = "150px",
   text = "Wifi Loader",
-  backColor = "#E8F2FC",
-  frontColor = "#4645F6"
+  backColor = "#dff2f8",
+  frontColor = "#4AB1D4"
 }) => {
   return (
     <div 

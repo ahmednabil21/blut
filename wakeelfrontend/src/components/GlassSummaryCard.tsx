@@ -25,9 +25,9 @@ const VARIANT_STYLES: Record<
   },
   violet: {
     shell:
-      'border-violet-300/45 dark:border-violet-500/28 bg-gradient-to-br from-violet-100/50 via-white/35 to-fuchsia-50/22 dark:from-violet-950/42 dark:via-slate-900/50 dark:to-slate-950/35 shadow-[0_10px_36px_-8px_rgba(139,92,246,0.2)] dark:shadow-[0_12px_40px_-10px_rgba(139,92,246,0.14)]',
-    title: 'text-violet-900/82 dark:text-violet-200/95',
-    value: 'text-violet-950 dark:text-violet-50',
+      'border-primary-300/45 dark:border-primary-500/28 bg-gradient-to-br from-primary-100/50 via-white/35 to-primary-50/22 dark:from-primary-950/42 dark:via-slate-900/50 dark:to-slate-950/35 shadow-[0_10px_36px_-8px_rgba(74,177,212,0.2)] dark:shadow-[0_12px_40px_-10px_rgba(74,177,212,0.14)]',
+    title: 'text-primary-900/82 dark:text-primary-200/95',
+    value: 'text-primary-950 dark:text-primary-50',
   },
   rose: {
     shell:

@@ -877,7 +877,7 @@ export const InvoicePrintTemplateSettings: React.FC<InvoicePrintTemplateSettings
                   {previewInvoiceNumber}
                 </strong>
               </span>
-              <span className="text-gray-500">تاريخ: 2026/04/12 (تجريبي)</span>
+              <span className="text-gray-500">تاريخ: 2024/04/12 (تجريبي)</span>
             </div>
 
             {variant === 'activation' ? (
@@ -885,7 +885,7 @@ export const InvoicePrintTemplateSettings: React.FC<InvoicePrintTemplateSettings
                 <p><span className="text-gray-500">اسم العميل:</span> عميل تجريبي</p>
                 <p><span className="text-gray-500">هاتف المشترك:</span> 07xx xxx xxxx</p>
                 <p><span className="text-gray-500">الباقة:</span> باقة تجريبية</p>
-                <p><span className="text-gray-500">تاريخ الانتهاء:</span> 2026-12-31</p>
+                <p><span className="text-gray-500">تاريخ الانتهاء:</span> 2024-12-31</p>
                 <p><span className="text-gray-500">المبلغ الكلي:</span> 50,000 د.ع</p>
                 <p><span className="text-gray-500">الواصل:</span> 30,000 د.ع</p>
                 <p><span className="text-gray-500">المتبقي:</span> 20,000 د.ع</p>

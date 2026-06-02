@@ -487,7 +487,7 @@ const LandingPage: React.FC = () => {
             </div>
           </div>
           <div className="border-t border-gray-800 mt-8 pt-8 text-center text-gray-400" style={{ fontFamily: 'Cairo, sans-serif' }}>
-            <p>جميع الحقوق محفوظة لنظام الوكيل 2026 ©</p>
+            <p>جميع الحقوق محفوظة شركة انجاز عراق 2024 ©</p>
           </div>
         </div>
       </footer>

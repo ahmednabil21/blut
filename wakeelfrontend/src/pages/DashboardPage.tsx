@@ -568,7 +568,7 @@ const DashboardPage: React.FC = () => {
   const financialChartItems = useMemo(() => {
     const rows: DashboardBarChartItem[] = [
       { id: 'incoming', label: 'الوارد', value: Number(stats?.incomingAmount ?? 0) || 0, color: '#10b981' },
-      { id: 'debts', label: 'الديون', value: debtsStats?.totalDebtAmount || 0, color: '#8b5cf6' },
+      { id: 'debts', label: 'الديون', value: debtsStats?.totalDebtAmount || 0, color: '#4AB1D4' },
       {
         id: 'profitActivation',
         label: 'ربح التفعيل',
@@ -654,8 +654,8 @@ const DashboardPage: React.FC = () => {
           desktopSize="150px"
           mobileSize="150px"
           text="تحميل لوحة التحكم..."
-          backColor="#E8F2FC"
-          frontColor="#4645F6"
+          backColor="#dff2f8"
+          frontColor="#4AB1D4"
         />
       </div>
     );
@@ -828,7 +828,7 @@ const DashboardPage: React.FC = () => {
                   id: 'debts',
                   label: 'الديون',
                   value: mainAgentDashboard?.totalDebtsAmount ?? 0,
-                  color: '#8b5cf6',
+                  color: '#4AB1D4',
                 },
                 {
                   id: 'incoming',

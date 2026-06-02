@@ -582,8 +582,8 @@ const AgentsPage: React.FC = () => {
           desktopSize="150px"
           mobileSize="150px"
           text="تحميل الوكلاء..."
-          backColor="#E8F2FC"
-          frontColor="#4645F6"
+          backColor="#dff2f8"
+          frontColor="#4AB1D4"
         />
       </div>
     );

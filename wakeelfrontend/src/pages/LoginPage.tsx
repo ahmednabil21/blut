@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 // import Turnstile from 'react-turnstile'; // خدمة Cloudflare Turnstile — معطّلة بتعليق
-import Lottie from 'lottie-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Eye, EyeOff, User, Lock, AlertTriangle, RefreshCw } from 'lucide-react';
 import WifiLoaderComponent from '../components/WifiLoaderComponent';
 import { ApiService } from '../services/api';
 import { showSuccess } from '../utils/notifications';
-import isometricDataAnalysisAnimation from '../images/Isometric data analysis.json';
+import loginLogoGif from '../assets/activation-receipt/logologin-ezgif.com-video-to-gif-converter.gif';
 
 // const TURNSTILE_SITE_KEY = process.env.REACT_APP_TURNSTILE_SITE_KEY || '0x4AAAAAACh0LGLTfAOqhxi6';
 
@@ -198,8 +197,8 @@ const LoginPage: React.FC = () => {
           desktopSize="150px"
           mobileSize="150px"
           text="جاري تسجيل الدخول..."
-          backColor="#F0EAFE"
-          frontColor="#8B5CF6"
+          backColor="#dff2f8"
+          frontColor="#4AB1D4"
         />
       </div>
     );
@@ -344,20 +343,19 @@ const LoginPage: React.FC = () => {
             </form>
 
             <div className="text-center text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-4 sm:mt-6">
-              <p>جميع الحقوق محفوظة لنظام الوكيل 2026 ©</p>
+              <p>جميع الحقوق محفوظة شركة انجاز عراق 2024 ©</p>
             </div>
           </div>
         </div>
 
-        {/* Animated System Visual Section */}
+        {/* شعار متحرك */}
         <div className="flex-1 flex flex-col items-center justify-center lg:pl-8 order-1 lg:order-2">
           <div className="text-center bg-white/60 dark:bg-gray-800/40 rounded-2xl p-5 sm:p-6 border border-white/60 dark:border-gray-700/40 backdrop-blur-sm shadow-lg">
-            <div className="mx-auto mb-3 h-48 w-48 sm:h-56 sm:w-56 lg:h-72 lg:w-72">
-              <Lottie
-                animationData={isometricDataAnalysisAnimation}
-                loop
-                autoplay
-                className="h-full w-full"
+            <div className="mx-auto mb-3 flex h-48 w-48 sm:h-56 sm:w-56 lg:h-72 lg:w-72 items-center justify-center">
+              <img
+                src={loginLogoGif}
+                alt="نظام الوكيل"
+                className="max-h-full max-w-full object-contain"
               />
             </div>
             <p className="text-sm sm:text-base text-gray-700 dark:text-gray-300 font-medium">

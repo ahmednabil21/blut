@@ -11,6 +11,9 @@
   --sar: env(safe-area-inset-right);
   /** مقياس واجهة التطبيق (مسافات Tailwind rem + أحجام نصوص نسبية) — 80% من حجم المتصفح الافتراضي */
   --wakeel-ui-root-font-pct: 80%;
+  /** ألوان العلامة — أساسي وثانوي */
+  --color-primary: #4AB1D4;
+  --color-secondary: #ffc73f;
 }
 
 @layer base {

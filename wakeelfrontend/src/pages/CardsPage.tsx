@@ -213,8 +213,8 @@ const CardsPage: React.FC = () => {
           desktopSize="120px"
           mobileSize="120px"
           text="تحميل الرسيلرز..."
-          backColor="#E8F2FC"
-          frontColor="#4645F6"
+          backColor="#dff2f8"
+          frontColor="#4AB1D4"
         />
       </div>
     );
@@ -228,8 +228,8 @@ const CardsPage: React.FC = () => {
           desktopSize="120px"
           mobileSize="120px"
           text="تحميل سلاسل الكروت..."
-          backColor="#E8F2FC"
-          frontColor="#4645F6"
+          backColor="#dff2f8"
+          frontColor="#4AB1D4"
         />
       </div>
     );

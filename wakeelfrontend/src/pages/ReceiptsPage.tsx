@@ -9,6 +9,9 @@ import { useMyAgent } from '../hooks/useMyAgent';
 import type { ActivationInvoicePrintSettingsDto } from '../types';
 import {
   buildActivationReceiptPrintHtml,
+  embedActivationReceiptStaticImages,
+  enrichActivationPrintPayload,
+  openActivationReceiptPrintWindow,
   renewalLikeToActivationPrintPayload,
 } from '../utils/activationReceiptPrintHtml';
 import { isPythonBackend } from '../config/apiConfig';
@@ -369,45 +372,42 @@ const ReceiptsPage: React.FC = () => {
 
   const handlePrintReceipt = async (receipt: RenewalReceipt) => {
     setSelectedReceipt(receipt);
-    setTimeout(async () => {
-      // إنشاء نافذة طباعة جديدة
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) return;
+    const appOrigin = typeof window !== 'undefined' ? window.location.origin : '';
 
-      const printBase = {
-        appOrigin: typeof window !== 'undefined' ? window.location.origin : '',
-        apiBaseUrl: apiService.getBaseURL(),
-      };
+    let settings: ActivationInvoicePrintSettingsDto = {};
+    try {
+      settings = await apiService.getActivationInvoicePrintSettings(myAgent?.id || undefined);
+    } catch {
+      settings = {};
+    }
 
-      let settings: ActivationInvoicePrintSettingsDto = {};
-      try {
-        settings = await apiService.getActivationInvoicePrintSettings(myAgent?.id || undefined);
-      } catch {
-        settings = {};
+    const embeddedImages = await embedActivationReceiptStaticImages(appOrigin);
+
+    const printPayload = enrichActivationPrintPayload(
+      renewalLikeToActivationPrintPayload(receipt as unknown as Record<string, unknown>),
+      {
+        serviceType: myAgent?.serviceType,
+        agentCompanyName: receipt.agentCompanyName ?? myAgent?.companyName,
       }
+    );
 
-      const printContent = buildActivationReceiptPrintHtml(
-        settings,
-        renewalLikeToActivationPrintPayload(receipt as unknown as Record<string, unknown>),
-        {
-          formatDate,
-          locale,
-          ...printBase,
-          fallbackOrganizerName: (user?.fullName || user?.username || '').trim() || undefined,
-        }
-      );
+    const printContent = buildActivationReceiptPrintHtml(
+      settings,
+      printPayload,
+      {
+        formatDate,
+        locale,
+        appOrigin,
+        embeddedImages,
+        fallbackOrganizerName: (user?.username || '').trim() || undefined,
+      }
+    );
 
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-
-      // انتظار تحميل المحتوى ثم الطباعة
-      printWindow.onload = () => {
-        setTimeout(() => {
-          printWindow.print();
-          printWindow.close();
-        }, 500);
-      };
-    }, 100);
+    try {
+      await openActivationReceiptPrintWindow(printContent);
+    } catch {
+      alert('تعذّر فتح نافذة الطباعة. حدّث الصفحة ثم أعد المحاولة.');
+    }
     setShowDropdown(null);
   };
 
@@ -596,8 +596,8 @@ const ReceiptsPage: React.FC = () => {
           desktopSize="150px"
           mobileSize="150px"
           text="تحميل التفعيلات..."
-          backColor="#E8F2FC"
-          frontColor="#4645F6"
+          backColor="#dff2f8"
+          frontColor="#4AB1D4"
         />
       </div>
     );
