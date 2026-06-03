@@ -566,7 +566,8 @@ const SubscribersPage: React.FC = () => {
         noteType: noteTypeNum !== undefined && !isNaN(noteTypeNum as any) ? noteTypeNum : undefined,
         hasExtensionActivation: appliedExtensionActivationFilter || undefined,
         expirationFromDate: appliedExpirationFromDate.trim() || undefined,
-        expirationToDate: appliedExpirationToDate.trim() || undefined,
+        expirationToDate:
+          isPythonBackend() ? undefined : appliedExpirationToDate.trim() || undefined,
         resellerId: allRegions ? undefined : (fetchReseller?.id ?? selectedOperationalResellerId) || undefined,
         resellerName: allRegions ? undefined : fetchReseller?.name,
       };
@@ -1939,8 +1940,15 @@ const SubscribersPage: React.FC = () => {
     setAppliedZoneFilter(zoneFilter.trim());
     setAppliedNoteTypeFilter(noteTypeFilter);
     setAppliedExtensionActivationFilter(extensionActivationFilter);
-    setAppliedExpirationFromDate(expirationFromDate.trim());
-    setAppliedExpirationToDate(expirationToDate.trim());
+    if (isPythonBackend()) {
+      const day = expirationFromDate.trim();
+      setAppliedExpirationFromDate(day);
+      setAppliedExpirationToDate('');
+      setExpirationToDate('');
+    } else {
+      setAppliedExpirationFromDate(expirationFromDate.trim());
+      setAppliedExpirationToDate(expirationToDate.trim());
+    }
     setCurrentPage(1);
   };
 
@@ -1977,7 +1985,9 @@ const SubscribersPage: React.FC = () => {
       setExtensionActivationFilter(appliedExtensionActivationFilter);
       setMaxDaysUntilExpiry(appliedMaxDaysUntilExpiry);
       setExpirationFromDate(appliedExpirationFromDate?.split('T')[0] ?? '');
-      setExpirationToDate(appliedExpirationToDate?.split('T')[0] ?? '');
+      if (!isPythonBackend()) {
+        setExpirationToDate(appliedExpirationToDate?.split('T')[0] ?? '');
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAdvancedFilter]);
@@ -3287,7 +3297,7 @@ const SubscribersPage: React.FC = () => {
           <div className="mt-3 p-4 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-lg">
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
               {isPythonBackend()
-                ? 'القائمة من قاعدة البيانات بعد المزامنة. الفلاتر: حالة الاشتراك، حالة الاتصال (أونلاين/أوفلاين)، تاريخ الانتهاء، الاسم، اسم المستخدم، الهاتف، أو معرّف المشترك.'
+                ? 'القائمة من قاعدة البيانات بعد المزامنة. الفلاتر: حالة الاشتراك، حالة الاتصال (أونلاين/أوفلاين)، تاريخ انتهاء محدد (expiration_date)، الاسم، اسم المستخدم، الهاتف، أو معرّف المشترك.'
                 : 'الحالة، الكابينة، المنطقة، نوع الملاحظة، ترتيب التاريخ، الأيام حتى الانتهاء، ونطاق تاريخ انتهاء الاشتراك.'}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -3416,24 +3426,40 @@ const SubscribersPage: React.FC = () => {
                   </div>
                 </>
               )}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">انتهاء الاشتراك من تاريخ</label>
-                <input
-                  type="date"
-                  value={expirationFromDate}
-                  onChange={(e) => setExpirationFromDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">انتهاء الاشتراك إلى تاريخ</label>
-                <input
-                  type="date"
-                  value={expirationToDate}
-                  onChange={(e) => setExpirationToDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white text-sm"
-                />
-              </div>
+              {isPythonBackend() ? (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    تاريخ انتهاء الاشتراك
+                  </label>
+                  <input
+                    type="date"
+                    value={expirationFromDate}
+                    onChange={(e) => setExpirationFromDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white text-sm"
+                  />
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">انتهاء الاشتراك من تاريخ</label>
+                    <input
+                      type="date"
+                      value={expirationFromDate}
+                      onChange={(e) => setExpirationFromDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">انتهاء الاشتراك إلى تاريخ</label>
+                    <input
+                      type="date"
+                      value={expirationToDate}
+                      onChange={(e) => setExpirationToDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white text-sm"
+                    />
+                  </div>
+                </>
+              )}
               {!isPythonBackend() && (
                 <div className="flex items-end">
                   <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">

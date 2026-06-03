@@ -64,11 +64,13 @@ export function parseSubscriberSearchForPython(search: string): {
   return { subscriber_name: t };
 }
 
+/** Python GET /api/subscribers يقبل expiration_date ليوم واحد (YYYY-MM-DD) فقط */
 function pickExpirationDateYmd(params: PaginationParams): string | undefined {
-  const to = (params.expirationToDate ?? '').trim().split('T')[0];
   const from = (params.expirationFromDate ?? '').trim().split('T')[0];
-  if (to) return to;
+  const to = (params.expirationToDate ?? '').trim().split('T')[0];
+  if (from && to) return from;
   if (from) return from;
+  if (to) return to;
   return undefined;
 }
 
@@ -105,7 +107,7 @@ export function buildPythonSubscribersQueryParams(
     else if (parsed.subscriber_name) out.subscriber_name = parsed.subscriber_name;
   }
 
-  if (params?.sync) out.sync = 'true';
+  out.sync = params?.sync === true;
 
   const sortBy = (params?.sortBy ?? 'expirationDate').trim();
   if (sortBy === 'expirationDate' || sortBy === 'expiration') {
