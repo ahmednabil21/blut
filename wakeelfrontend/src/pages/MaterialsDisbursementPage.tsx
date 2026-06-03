@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import { apiService, ApiService } from '../services/api';
+import { isPythonBackend } from '../config/apiConfig';
 import { useMyAgent } from '../hooks/useMyAgent';
 import { tryEmbedInvoiceLogoAsDataUrl, waitForDocumentImages } from '../utils/activationReceiptPrintHtml';
 import { buildSalesMaterialInvoicePrintHtml } from '../utils/salesMaterialInvoicePrintHtml';
@@ -22,6 +23,7 @@ import { Package, X, Save, ShoppingCart, Search, Printer, RotateCcw, UserCircle 
 function disbursementTypeLabel(t: number): string {
   if (t === DisbursementType.Sale) return 'بيع';
   if (t === DisbursementType.SpecialOfferPackage) return 'باقة عرض خاص';
+  if (t === DisbursementType.Replacement) return 'مجاني';
   return 'سحب';
 }
 
@@ -95,6 +97,7 @@ const MaterialsDisbursementPage: React.FC = () => {
     },
     [locale]
   );
+  const pythonBackend = isPythonBackend();
   const isAdmin = user?.role === UserRole.Admin;
   const canAccessMaterialsApi = user?.role !== UserRole.Employee || !!user?.canManageMaterialsAndSales;
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
@@ -157,9 +160,15 @@ const MaterialsDisbursementPage: React.FC = () => {
   const { data: agentsResponse } = useQuery({
     queryKey: ['agents', 1, 100],
     queryFn: () => apiService.getAllAgents({ page: 1, pageSize: 100 }),
-    enabled: isAdmin,
+    enabled: isAdmin && !pythonBackend,
   });
   const agents = React.useMemo(() => agentsResponse?.data ?? [], [agentsResponse?.data]);
+
+  const { data: pythonResellers = [] } = useQuery({
+    queryKey: ['api-resellers', 'materials-disburse'],
+    queryFn: () => apiService.getApiResellers(),
+    enabled: isAdmin && pythonBackend,
+  });
 
   const selectedAgentRecord = React.useMemo(
     () => agents.find((a) => a.id === selectedAgentId),
@@ -830,18 +839,26 @@ const MaterialsDisbursementPage: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2">
           {isAdmin && (
             <div className="min-w-[180px]">
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">الوكيل</label>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                {pythonBackend ? 'الريسيلر' : 'الوكيل'}
+              </label>
               <select
                 value={selectedAgentId}
                 onChange={(e) => setSelectedAgentId(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white text-sm"
               >
-                <option value="">-- اختر الوكيل --</option>
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.companyName || a.fullName || a.username}
-                  </option>
-                ))}
+                <option value="">-- {pythonBackend ? 'اختر الريسيلر' : 'اختر الوكيل'} --</option>
+                {pythonBackend
+                  ? pythonResellers.map((r) => (
+                      <option key={r.id} value={String(r.id)}>
+                        {r.name || r.id}
+                      </option>
+                    ))
+                  : agents.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.companyName || a.fullName || a.username}
+                      </option>
+                    ))}
               </select>
             </div>
           )}
@@ -1197,7 +1214,7 @@ const MaterialsDisbursementPage: React.FC = () => {
           className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white text-sm"
         >
           <option value="">كل الأنواع</option>
-          <option value={DisbursementType.Replacement}>سحب</option>
+          <option value={DisbursementType.Replacement}>مجاني</option>
           <option value={DisbursementType.Sale}>بيع</option>
           <option value={DisbursementType.SpecialOfferPackage}>باقة عرض خاص</option>
         </select>
@@ -1671,7 +1688,7 @@ const MaterialsDisbursementPage: React.FC = () => {
                   onChange={handleDisburseInputChange}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white"
                 >
-                  <option value={DisbursementType.Replacement}>سحب</option>
+                  <option value={DisbursementType.Replacement}>مجاني</option>
                   <option value={DisbursementType.Sale}>بيع</option>
                 </select>
               </div>

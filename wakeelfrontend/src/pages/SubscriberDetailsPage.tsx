@@ -25,6 +25,8 @@ import {
   type SubscriberWhatsAppSendLogItem,
   type SubscriberWhatsAppSendKind,
   RenewalHistory,
+  Debt,
+  DebtStatus,
   EmployeeTask,
   EmployeeTaskStatus,
   EmployeeTaskType,
@@ -36,6 +38,11 @@ import {
   UserRole,
 } from '../types';
 import { apiService, ApiService } from '../services/api';
+import { isPythonBackend } from '../config/apiConfig';
+import {
+  mapActivationToRenewalReceipt,
+  sortActivationRecordsNewestFirst,
+} from '../utils/activationRecord';
 import { useAuth } from '../contexts/AuthContext';
 import { useDigits } from '../contexts/DigitsContext';
 import { useMyAgent } from '../hooks/useMyAgent';
@@ -44,7 +51,24 @@ import { showSuccess, showError } from '../utils/notifications';
 import { SUBSCRIBER_NOTE_TYPE_LABEL_AR } from '../utils/subscriberNoteTypeLabels';
 
 const RENEWAL_PAGE_SIZE = 10;
+const DEBTS_PAGE_SIZE = 10;
 const MAINT_PAGE_SIZE = 10;
+
+function debtStatusLabel(status: number): string {
+  if (status === DebtStatus.Paid) return 'مسدد';
+  if (status === DebtStatus.Partial) return 'مسدد جزئياً';
+  return 'غير مسدد';
+}
+
+function debtStatusClass(status: number): string {
+  if (status === DebtStatus.Paid) {
+    return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200';
+  }
+  if (status === DebtStatus.Partial) {
+    return 'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100';
+  }
+  return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200';
+}
 
 function getWhatsAppReminderErrorMessage(err: unknown): string {
   const msg = ApiService.showError(err);
@@ -157,7 +181,9 @@ const SubscriberDetailsPage: React.FC = () => {
     user?.role === UserRole.SubAgent ||
     user?.role === UserRole.Employee ||
     user?.role === UserRole.MainAgent;
+  const pythonBackend = isPythonBackend();
   const [renewalPage, setRenewalPage] = useState(1);
+  const [debtsPage, setDebtsPage] = useState(1);
   const [maintPage, setMaintPage] = useState(1);
   const [reminderSending, setReminderSending] = useState(false);
   const [selectedTask, setSelectedTask] = useState<EmployeeTask | null>(null);
@@ -165,19 +191,39 @@ const SubscriberDetailsPage: React.FC = () => {
 
   useEffect(() => {
     setRenewalPage(1);
+    setDebtsPage(1);
     setMaintPage(1);
   }, [subscriberId]);
 
   const {
-    data: subscriber,
-    isLoading: subscriberLoading,
-    isError: subscriberError,
-    error: subscriberErr,
-    refetch: refetchSubscriber,
+    data: pythonDetails,
+    isLoading: pythonDetailsLoading,
+    isError: pythonDetailsError,
+    error: pythonDetailsErr,
+    isFetching: pythonDetailsFetching,
+    refetch: refetchPythonDetails,
+  } = useQuery({
+    queryKey: ['subscriber-details-bundle', subscriberId, renewalPage, debtsPage],
+    queryFn: () =>
+      apiService.getSubscriberDetails(subscriberId!, {
+        activationsPage: renewalPage,
+        activationsPerPage: RENEWAL_PAGE_SIZE,
+        debtsPage,
+        debtsPerPage: DEBTS_PAGE_SIZE,
+      }),
+    enabled: pythonBackend && !!subscriberId,
+  });
+
+  const {
+    data: legacySubscriber,
+    isLoading: legacySubscriberLoading,
+    isError: legacySubscriberError,
+    error: legacySubscriberErr,
+    refetch: refetchLegacySubscriber,
   } = useQuery({
     queryKey: ['subscriber-details', subscriberId],
     queryFn: () => apiService.getSubscriberById(subscriberId!),
-    enabled: !!subscriberId,
+    enabled: !pythonBackend && !!subscriberId,
   });
 
   const {
@@ -188,8 +234,14 @@ const SubscriberDetailsPage: React.FC = () => {
     queryKey: ['subscriber-renewals-paged', subscriberId, renewalPage],
     queryFn: () =>
       apiService.getRenewalsBySubscriber(subscriberId!, renewalPage, RENEWAL_PAGE_SIZE),
-    enabled: !!subscriberId,
+    enabled: !pythonBackend && !!subscriberId,
   });
+
+  const subscriber = pythonBackend ? pythonDetails?.subscriber : legacySubscriber;
+  const subscriberLoading = pythonBackend ? pythonDetailsLoading : legacySubscriberLoading;
+  const subscriberError = pythonBackend ? pythonDetailsError : legacySubscriberError;
+  const subscriberErr = pythonBackend ? pythonDetailsErr : legacySubscriberErr;
+  const refetchSubscriber = pythonBackend ? refetchPythonDetails : refetchLegacySubscriber;
 
   const { data: myAgent } = useMyAgent(!!needMyAgentForWhatsApp);
   const hasWhatsAppSession = !!(myAgent?.whatsAppSessionId?.trim());
@@ -333,9 +385,30 @@ const SubscriberDetailsPage: React.FC = () => {
     return 'غير معروف';
   };
 
-  const renewalData = renewalsPageData?.data ?? [];
-  const renewalTotalItems = renewalsPageData?.totalItems ?? 0;
-  const renewalTotalPages = Math.max(1, renewalsPageData?.totalPages ?? 1);
+  const renewalData: RenewalHistory[] = useMemo(() => {
+    if (pythonBackend && pythonDetails) {
+      const sorted = sortActivationRecordsNewestFirst(pythonDetails.activations.data);
+      return sorted.map((row) => mapActivationToRenewalReceipt(row) as RenewalHistory);
+    }
+    return renewalsPageData?.data ?? [];
+  }, [pythonBackend, pythonDetails, renewalsPageData]);
+
+  const renewalTotalItems = pythonBackend
+    ? pythonDetails?.activations.totalItems ?? 0
+    : renewalsPageData?.totalItems ?? 0;
+  const renewalTotalPages = Math.max(
+    1,
+    pythonBackend
+      ? pythonDetails?.activations.totalPages ?? 1
+      : renewalsPageData?.totalPages ?? 1
+  );
+  const renewalsBusy = pythonBackend
+    ? pythonDetailsLoading || pythonDetailsFetching
+    : renewalsLoading || renewalsFetching;
+
+  const debtsList: Debt[] = pythonDetails?.debts.data ?? [];
+  const debtsTotalItems = pythonDetails?.debts.totalItems ?? 0;
+  const debtsTotalPages = Math.max(1, pythonDetails?.debts.totalPages ?? 1);
   const openTaskDetails = async (taskId: string) => {
     if (!subscriberId || !taskId) return;
     setTaskLoadingId(taskId);
@@ -670,12 +743,12 @@ const SubscriberDetailsPage: React.FC = () => {
             </div>
 
             <div className="rounded-2xl border border-gray-200/80 dark:border-gray-700/80 bg-white dark:bg-gray-900/40 shadow-sm overflow-hidden">
-              {renewalsLoading && renewalPage === 1 ? (
+              {renewalsBusy && renewalPage === 1 ? (
                 <div className="flex flex-col items-center py-16">
                   <RefreshCw className="h-8 w-8 animate-spin text-amber-500 mb-2" />
                   <p className="text-sm text-gray-500">جاري تحميل سجل التفعيلات...</p>
                 </div>
-              ) : renewalData.length === 0 && !renewalsFetching ? (
+              ) : renewalData.length === 0 && !renewalsBusy ? (
                 <div className="text-center py-16 px-4">
                   <Clock className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600 mb-3" />
                   <p className="text-gray-700 dark:text-gray-300 font-medium">لا يوجد سجل تفعيلات</p>
@@ -755,11 +828,101 @@ const SubscriberDetailsPage: React.FC = () => {
             </div>
           </section>
 
-          {/* 3 — سجل الصيانات */}
+          {pythonBackend && (
+            <section className="scroll-mt-24">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200 text-sm font-bold">
+                  3
+                </span>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">سجل الديون</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    الديون المسجّلة محلياً لهذا المشترك
+                    {pythonDetails && pythonDetails.totalDebtAmount > 0
+                      ? ` — غير مسدد: ${formatNumber(pythonDetails.totalDebtAmount, { suffix: ' د.ع' })}`
+                      : ''}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200/80 dark:border-gray-700/80 bg-white dark:bg-gray-900/40 shadow-sm overflow-hidden">
+                {pythonDetailsLoading && debtsPage === 1 ? (
+                  <div className="flex flex-col items-center py-16">
+                    <RefreshCw className="h-8 w-8 animate-spin text-rose-500 mb-2" />
+                    <p className="text-sm text-gray-500">جاري تحميل سجل الديون...</p>
+                  </div>
+                ) : debtsList.length === 0 && !pythonDetailsFetching ? (
+                  <div className="text-center py-16 px-4">
+                    <CreditCard className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600 mb-3" />
+                    <p className="text-gray-700 dark:text-gray-300 font-medium">لا يوجد سجل ديون</p>
+                    <p className="text-sm text-gray-500 mt-1">لم يُسجَّل أي دين لهذا المشترك بعد.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="wakeel-table-scroll overflow-x-auto">
+                      <table className="min-w-[720px] w-full text-right text-sm">
+                        <thead>
+                          <tr className="bg-rose-50/80 dark:bg-rose-950/20 border-b border-gray-200 dark:border-gray-700">
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">المبلغ</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">الوصف</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">تاريخ التسديد</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">الحالة</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">تاريخ الإنشاء</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {debtsList.map((debt: Debt) => (
+                            <tr
+                              key={debt.id}
+                              className="border-b border-gray-100 dark:border-gray-800 hover:bg-rose-50/40 dark:hover:bg-rose-950/10"
+                            >
+                              <td className="px-4 py-3 whitespace-nowrap tabular-nums font-medium text-gray-900 dark:text-white">
+                                {formatNumber(debt.amount, { suffix: ' د.ع' })}
+                              </td>
+                              <td className="px-4 py-3 text-gray-800 dark:text-gray-200 max-w-xs truncate" title={debt.description}>
+                                {debt.description || '—'}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-gray-700 dark:text-gray-300">
+                                {debt.dueDate ? formatDate(debt.dueDate) : '—'}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span
+                                  className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${debtStatusClass(debt.status)}`}
+                                >
+                                  {debtStatusLabel(debt.status)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-gray-600 dark:text-gray-400">
+                                {debt.createdAt ? formatDate(debt.createdAt) : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {debtsTotalItems > 0 && (
+                      <Pagination
+                        currentPage={debtsPage}
+                        totalPages={debtsTotalPages}
+                        totalItems={debtsTotalItems}
+                        pageSize={DEBTS_PAGE_SIZE}
+                        hasNextPage={debtsPage < debtsTotalPages}
+                        hasPreviousPage={debtsPage > 1}
+                        onPageChange={setDebtsPage}
+                        className="rounded-b-2xl"
+                      />
+                    )}
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* سجل الصيانات */}
           <section className="scroll-mt-24">
             <div className="flex items-center gap-3 mb-4">
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 dark:bg-violet-900/40 text-violet-800 dark:text-violet-200 text-sm font-bold">
-                3
+                {pythonBackend ? '4' : '3'}
               </span>
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">سجل الصيانات</h2>

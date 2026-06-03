@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiService, ApiService } from '../services/api';
+import { isPythonBackend } from '../config/apiConfig';
 import { Material, MaterialCreateRequest, MaterialUpdateRequest, PaginatedResponse } from '../types';
 import { showSuccess, showError } from '../utils/notifications';
 import { useAuth } from '../contexts/AuthContext';
@@ -13,6 +14,7 @@ import { Plus, Package, X, Save, Search, Edit2, Trash2 } from 'lucide-react';
 const MaterialsPage: React.FC = () => {
   const { user } = useAuth();
   const { formatNumber, formatDate } = useDigits();
+  const pythonBackend = isPythonBackend();
   const isAdmin = user?.role === UserRole.Admin;
   const canAccessMaterialsApi = user?.role !== UserRole.Employee || !!user?.canManageMaterialsAndSales;
   const [showAddModal, setShowAddModal] = useState(false);
@@ -47,9 +49,15 @@ const MaterialsPage: React.FC = () => {
   const { data: agentsResponse } = useQuery({
     queryKey: ['agents', 1, 100],
     queryFn: () => apiService.getAllAgents({ page: 1, pageSize: 100 }),
-    enabled: isAdmin,
+    enabled: isAdmin && !pythonBackend,
   });
   const agents = agentsResponse?.data ?? [];
+
+  const { data: pythonResellers = [] } = useQuery({
+    queryKey: ['api-resellers', 'materials'],
+    queryFn: () => apiService.getApiResellers(),
+    enabled: isAdmin && pythonBackend,
+  });
 
   const { data: materialsResponse, error, isLoading } = useQuery<PaginatedResponse<Material>>({
     queryKey: ['materials', isAdmin ? selectedAgentId : undefined, currentPage, pageSize, appliedSearchTerm],
@@ -235,18 +243,26 @@ const MaterialsPage: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2">
           {isAdmin && (
             <div className="min-w-[180px]">
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">الوكيل</label>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                {pythonBackend ? 'الريسيلر' : 'الوكيل'}
+              </label>
               <select
                 value={selectedAgentId}
                 onChange={(e) => setSelectedAgentId(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white text-sm"
               >
-                <option value="">-- اختر الوكيل --</option>
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.companyName || a.fullName || a.username}
-                  </option>
-                ))}
+                <option value="">-- {pythonBackend ? 'اختر الريسيلر' : 'اختر الوكيل'} --</option>
+                {pythonBackend
+                  ? pythonResellers.map((r) => (
+                      <option key={r.id} value={String(r.id)}>
+                        {r.name || r.id}
+                      </option>
+                    ))
+                  : agents.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.companyName || a.fullName || a.username}
+                      </option>
+                    ))}
               </select>
             </div>
           )}
@@ -290,9 +306,9 @@ const MaterialsPage: React.FC = () => {
               <tr>
                 <th className="px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">الاسم</th>
                 <th className="px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"> الكمية المتاحة</th>
-                <th className="px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">سعر الوكيل (د.ع)</th>
-                <th className="px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">سعر المشترك (د.ع)</th>
-                <th className="px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">سعر البيع للوكيل (د.ع)</th>
+                <th className="px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">سعر الجملة (د.ع)</th>
+                <th className="px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">سعر البيع (د.ع)</th>
+                <th className="px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden lg:table-cell">سعر التاجر (د.ع)</th>
                 <th className="px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">ملاحظات</th>
                 {list.some((m) => m.createdAt) && (
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">تاريخ الإنشاء</th>
@@ -438,7 +454,7 @@ const MaterialsPage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">سعر الوكيل (د.ع)</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">سعر الجملة (د.ع)</label>
                   <input
                     type="number"
                     name="agentPrice"
@@ -451,7 +467,7 @@ const MaterialsPage: React.FC = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">سعر المشترك (د.ع)</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">سعر البيع (د.ع)</label>
                 <input
                   type="number"
                   name="subscriberPrice"
@@ -571,7 +587,7 @@ const MaterialsPage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">سعر الوكيل (د.ع)</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">سعر الجملة (د.ع)</label>
                   <input
                     type="number"
                     name="agentPrice"
@@ -584,7 +600,7 @@ const MaterialsPage: React.FC = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">سعر المشترك (د.ع)</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">سعر البيع (د.ع)</label>
                 <input
                   type="number"
                   name="subscriberPrice"

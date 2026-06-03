@@ -67,6 +67,7 @@ import { getBaghdadDefaultExportRangeLast30Days, getBaghdadRangeBoundsIso, getBa
 import { styleAccountsExportExcelBlob } from '../utils/excelExport';
 import { SUBSCRIBER_NOTE_TYPE_LABEL_AR } from '../utils/subscriberNoteTypeLabels';
 import EditSubscriberModal from '../components/EditSubscriberModal';
+import SasEditSubscriberModal from '../components/SasEditSubscriberModal';
 import AddNoteModal from '../components/AddNoteModal';
 import Pagination from '../components/Pagination';
 import WifiLoaderComponent from '../components/WifiLoaderComponent';
@@ -515,7 +516,7 @@ const SubscribersPage: React.FC = () => {
     isLoading,
     isFetching: subscribersFetching,
   } = useQuery<PaginatedResponse<Subscriber>>({
-    queryKey: ['subscribers', 'offline', online, currentPage, pageSize, debouncedSearchTerm, statusFilter, connectionStatusFilter, sortDescending, appliedMaxDaysUntilExpiry, appliedFatFilter, appliedZoneFilter, appliedNoteTypeFilter, appliedExtensionActivationFilter, appliedExpirationFromDate, appliedExpirationToDate, selectedOperationalResellerId],
+    queryKey: ['subscribers', 'offline', online, currentPage, pageSize, debouncedSearchTerm, statusFilter, connectionStatusFilter, sortColumn, sortDescending, appliedMaxDaysUntilExpiry, appliedFatFilter, appliedZoneFilter, appliedNoteTypeFilter, appliedExtensionActivationFilter, appliedExpirationFromDate, appliedExpirationToDate, selectedOperationalResellerId],
     placeholderData: keepPreviousData,
     refetchInterval: (query) => {
       if (!isPythonBackend() || !online) return false;
@@ -557,6 +558,7 @@ const SubscribersPage: React.FC = () => {
           isPythonBackend() && connectionStatusFilter !== 'all'
             ? connectionStatusFilter
             : undefined,
+        sortBy: sortColumn,
         sortDescending: sortDescending,
         maxDaysUntilExpiry: daysNum !== undefined && !isNaN(daysNum) && daysNum >= 0 ? daysNum : undefined,
         fat: appliedFatFilter.trim() || undefined,
@@ -942,6 +944,8 @@ const SubscribersPage: React.FC = () => {
 
   const sortedSubscribers = React.useMemo(() => {
     if (!subscribers.length || !sortColumn) return subscribers;
+    // Python backend: الترتيب على كل الصفحات من GET /api/subscribers (sort_by + sortDescending)
+    if (isPythonBackend()) return subscribers;
     const colId = sortColumn;
     return [...subscribers].sort((a, b) => {
       const va = getSubscriberSortValue(a, colId, resellerNameById);
@@ -5303,7 +5307,21 @@ const SubscribersPage: React.FC = () => {
       )}
 
       {/* Edit Subscriber Modal */}
-      {selectedSubscriberForEdit && (
+      {selectedSubscriberForEdit && isPythonBackend() ? (
+        <SasEditSubscriberModal
+          isOpen={showEditModal}
+          onClose={() => {
+            setShowEditModal(false);
+            setSelectedSubscriberForEdit(null);
+          }}
+          subscriber={selectedSubscriberForEdit}
+          onUpdated={() => {
+            queryClient.invalidateQueries({ queryKey: ['subscribers'] });
+            setShowEditModal(false);
+            setSelectedSubscriberForEdit(null);
+          }}
+        />
+      ) : selectedSubscriberForEdit ? (
         <EditSubscriberModal
           isOpen={showEditModal}
           onClose={() => {
@@ -5316,7 +5334,7 @@ const SubscribersPage: React.FC = () => {
             await updateSubscriberMutation.mutateAsync({ id, data });
           }}
         />
-      )}
+      ) : null}
 
       {/* Add Note Modal */}
       {selectedSubscriberForNote && (

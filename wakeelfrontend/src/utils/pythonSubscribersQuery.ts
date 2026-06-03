@@ -77,8 +77,8 @@ export function buildPythonSubscribersQueryParams(
   params: PaginationParams | undefined,
   page: number,
   perPage: number
-): Record<string, string | number> {
-  const out: Record<string, string | number> = { page, per_page: perPage };
+): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = { page, per_page: perPage };
 
   const subscriptionStatus = mapFrontendStatusToPythonSubscriptionStatus(params?.status);
   if (subscriptionStatus) out.subscription_status = subscriptionStatus;
@@ -106,6 +106,25 @@ export function buildPythonSubscribersQueryParams(
   }
 
   if (params?.sync) out.sync = 'true';
+
+  const sortBy = (params?.sortBy ?? 'expirationDate').trim();
+  if (sortBy === 'expirationDate' || sortBy === 'expiration') {
+    out.sort_by = 'expiration';
+  } else if (sortBy === 'username' || sortBy === 'deviceUsername') {
+    out.sort_by = 'username';
+  } else if (sortBy === 'subscriberName' || sortBy === 'name') {
+    out.sort_by = 'full_name';
+  } else if (sortBy === 'profileName' || sortBy === 'profile') {
+    out.sort_by = 'profile_name';
+  } else if (sortBy === 'createdAt' || sortBy === 'activationDate') {
+    out.sort_by = 'created_at';
+  } else {
+    out.sort_by = 'expiration';
+  }
+
+  if (params?.sortDescending !== undefined) {
+    out.sortDescending = params.sortDescending === true;
+  }
 
   return out;
 }

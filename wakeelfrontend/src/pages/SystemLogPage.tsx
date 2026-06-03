@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
 import { useDigits } from '../contexts/DigitsContext';
 import { apiService, ApiService } from '../services/api';
+import { isPythonBackend } from '../config/apiConfig';
 import {
   ACTIVITY_TYPE_LABELS_AR,
   ActivityLogActivityTypeOption,
@@ -58,6 +59,7 @@ function ActivityLogSubscriberCell({ row }: { row: ActivityLogItem }) {
 const SystemLogPage: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
   const { formatDate } = useDigits();
+  const pythonBackend = isPythonBackend();
   const isAdmin = user?.role === UserRole.Admin;
 
   const [selectedAgentId, setSelectedAgentId] = useState('');
@@ -76,10 +78,17 @@ const SystemLogPage: React.FC = () => {
   const { data: agentsResponse } = useQuery({
     queryKey: ['allAgents', 'system-log'],
     queryFn: () => apiService.getAllAgents({ page: 1, pageSize: 5000 }),
-    enabled: isAuthenticated && isAdmin,
+    enabled: isAuthenticated && isAdmin && !pythonBackend,
     retry: false,
   });
   const adminAgents = (agentsResponse?.data ?? []) as Agent[];
+
+  const { data: pythonResellers = [] } = useQuery({
+    queryKey: ['api-resellers', 'system-log'],
+    queryFn: () => apiService.getApiResellers(),
+    enabled: isAuthenticated && isAdmin && pythonBackend,
+    retry: false,
+  });
 
   const { data: activityTypesFromApi = [] } = useQuery({
     queryKey: ['activity-log-activity-types'],
@@ -96,6 +105,16 @@ const SystemLogPage: React.FC = () => {
 
   useEffect(() => {
     if (!isAdmin) return;
+    if (pythonBackend) {
+      if (!pythonResellers.length) return;
+      const saved = localStorage.getItem(ACTIVITY_LOG_AGENT_STORAGE_KEY);
+      if (saved && pythonResellers.some((r) => String(r.id) === saved)) {
+        setSelectedAgentId(saved);
+      } else {
+        setSelectedAgentId(String(pythonResellers[0].id));
+      }
+      return;
+    }
     if (!adminAgents.length) return;
     const saved = localStorage.getItem(ACTIVITY_LOG_AGENT_STORAGE_KEY);
     if (saved && adminAgents.some((a) => a.id === saved)) {
@@ -103,7 +122,7 @@ const SystemLogPage: React.FC = () => {
     } else {
       setSelectedAgentId(adminAgents[0].id);
     }
-  }, [isAdmin, adminAgents.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAdmin, pythonBackend, pythonResellers.length, adminAgents.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isAdmin || !selectedAgentId) return;
@@ -221,7 +240,9 @@ const SystemLogPage: React.FC = () => {
 
         {isAdmin && (
           <div>
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">الوكيل</label>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+              {pythonBackend ? 'الريسيلر' : 'الوكيل'}
+            </label>
             <select
               value={selectedAgentId}
               onChange={(e) => {
@@ -230,14 +251,22 @@ const SystemLogPage: React.FC = () => {
               }}
               className="w-full sm:max-w-md rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-white"
             >
-              {adminAgents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {(a.companyName || a.fullName || a.username).trim() || a.id}
-                </option>
-              ))}
+              {pythonBackend
+                ? pythonResellers.map((r) => (
+                    <option key={r.id} value={String(r.id)}>
+                      {(r.name || '').trim() || String(r.id)}
+                    </option>
+                  ))
+                : adminAgents.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {(a.companyName || a.fullName || a.username).trim() || a.id}
+                    </option>
+                  ))}
             </select>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              يجب اختيار وكيل لعرض السجل (مطلوب للمسؤول).
+              {pythonBackend
+                ? 'اختر الريسيلر لعرض سجل عملياته.'
+                : 'يجب اختيار وكيل لعرض السجل (مطلوب للمسؤول).'}
             </p>
           </div>
         )}
@@ -332,7 +361,7 @@ const SystemLogPage: React.FC = () => {
               {!listEnabled ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
-                    اختر وكيلاً لعرض السجل.
+                    {pythonBackend ? 'اختر ريسيلراً لعرض السجل.' : 'اختر وكيلاً لعرض السجل.'}
                   </td>
                 </tr>
               ) : rows.length === 0 ? (

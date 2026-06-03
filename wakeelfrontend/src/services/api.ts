@@ -55,6 +55,8 @@ import {
   ActivationsListParams,
   ActivationsListResponse,
   SubscriberCreateRequest,
+  SubscriberDetailsBundle,
+  SubscriberDetailsResponse,
   SubscriberUpdateRequest,
   SubscriberNotesPatchDto,
   SubscriberInfo,
@@ -1739,6 +1741,31 @@ class ApiService {
 
   // Profile/Package endpoints
   async getProfiles(params?: ProfileListParams): Promise<PaginatedResponse<Profile>> {
+    if (isPythonBackend()) {
+      const list = await this.getSasProfiles();
+      const data: Profile[] = list.map((p) => ({
+        id: p.id,
+        name: p.name,
+        originalPrice: 0,
+        salePrice: 0,
+        renewalPeriod: 30,
+        isActive: true,
+        createdAt: new Date(0).toISOString(),
+        agentCompanyName: '',
+        agentResellerId: params?.resellerId ?? null,
+      }));
+      return {
+        data,
+        currentPage: 1,
+        pageSize: data.length,
+        totalItems: data.length,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
+        totalCount: data.length,
+        pageNumber: 1,
+      };
+    }
     const response: AxiosResponse<PaginatedResponse<Profile> | Profile[]> = await this.api.get('/subscribers/profiles', {
       baseURL: this.getNoApiBaseURL(),
       params: params ? {
@@ -2098,7 +2125,46 @@ class ApiService {
       agentResellerId: (fetchReseller?.id ?? '').trim() || undefined,
       agentResellerName: (fetchReseller?.name ?? '').trim() || undefined,
       zone: row.city != null ? String(row.city) : row.zone != null ? String(row.zone) : null,
+      fat: row.address != null ? String(row.address) : row.fat != null ? String(row.fat) : null,
     };
+  }
+
+  /** GET /api/subscribers/profiles — باقات SAS (Python backend) */
+  async getSasProfiles(): Promise<{ id: string; name: string }[]> {
+    const response = await this.api.get<{ data?: { id: string; name: string }[] }>(
+      '/subscribers/profiles'
+    );
+    const list = response.data?.data ?? [];
+    return list.map((p) => ({
+      id: String(p.id),
+      name: String(p.name ?? ''),
+    }));
+  }
+
+  /** PUT /api/subscribers/{sas_user_id} — تعديل مشترك على SAS */
+  async updateSasSubscriber(
+    id: string,
+    payload: {
+      username?: string;
+      password?: string;
+      firstName?: string;
+      lastName?: string;
+      phoneNumber?: string;
+      profileId?: string;
+      expirationDate?: string;
+      isActive?: boolean;
+      zone?: string;
+      fat?: string;
+      note?: string;
+    }
+  ): Promise<Subscriber> {
+    const response = await this.api.put<{
+      subscriber?: Record<string, unknown>;
+      message?: string;
+    }>(`/subscribers/${id}`, payload);
+    const body = response.data ?? {};
+    const row = (body.subscriber ?? body) as Record<string, unknown>;
+    return this.mapSasRowToSubscriber(row, null);
   }
 
   /** POST /api/subscribers/sync — مزامنة كاملة من SAS إلى MySQL */
@@ -2698,15 +2764,81 @@ class ApiService {
 
   async getSubscriberById(id: string): Promise<Subscriber> {
     const response: AxiosResponse<Subscriber> = await this.api.get(`/subscribers/${id}`);
-    // معالجة البيانات للتأكد من التطابق
-    const d = response.data as any;
+    const d = response.data as unknown as Record<string, unknown>;
+    if (isPythonBackend()) {
+      const row = (d.subscriber ?? d) as Record<string, unknown>;
+      return this.mapSasRowToSubscriber(row, null);
+    }
     const mr = d.maintenanceRecords ?? d.MaintenanceRecords;
+    const sub = response.data;
     return {
-      ...response.data,
-      paymentStatus: response.data.paymentStatus === 0 ? PaymentStatus.Unknown : response.data.paymentStatus,
-      paymentMethod: d.paymentMethod ?? d.PaymentMethod ?? null,
-      expirationDate: response.data.expirationDate || response.data.activationDate,
+      ...sub,
+      paymentStatus: sub.paymentStatus === 0 ? PaymentStatus.Unknown : sub.paymentStatus,
+      paymentMethod: (d.paymentMethod ?? d.PaymentMethod ?? null) as Subscriber['paymentMethod'],
+      expirationDate: sub.expirationDate || sub.activationDate,
       maintenanceRecords: Array.isArray(mr) ? mr : [],
+    };
+  }
+
+  /** GET /api/subscribers/{id}/details — معلومات + تفعيلات + ديون (Python) */
+  async getSubscriberDetails(
+    id: string,
+    options?: {
+      refresh?: boolean;
+      activationsPage?: number;
+      activationsPerPage?: number;
+      debtsPage?: number;
+      debtsPerPage?: number;
+    }
+  ): Promise<SubscriberDetailsBundle> {
+    const response = await this.api.get<SubscriberDetailsResponse>(`/subscribers/${id}/details`, {
+      params: {
+        refresh: options?.refresh === true,
+        activationsPage: options?.activationsPage ?? 1,
+        activationsPerPage: options?.activationsPerPage ?? 10,
+        debtsPage: options?.debtsPage ?? 1,
+        debtsPerPage: options?.debtsPerPage ?? 10,
+      },
+    });
+    const body = response.data ?? ({} as SubscriberDetailsResponse);
+    const act = body.activations ?? { data: [] };
+    const actList = Array.isArray(act.data) ? act.data : [];
+    const debts = body.debts ?? { data: [] };
+    const debtList = Array.isArray(debts.data) ? debts.data : [];
+    const subscriberRow = (body.subscriber ?? {}) as Record<string, unknown>;
+    const actCurrent = act.currentPage ?? (act as { current_page?: number }).current_page ?? 1;
+    const actSize = act.pageSize ?? (act as { per_page?: number }).per_page ?? actList.length;
+    const actTotal = act.totalItems ?? (act as { total?: number }).total ?? actList.length;
+    const actPages = act.totalPages ?? (act as { last_page?: number }).last_page ?? 1;
+    return {
+      subscriber: {
+        ...this.mapSasRowToSubscriber(subscriberRow, null),
+        totalDebt: Number(body.totalDebtAmount ?? 0),
+      },
+      totalDebtAmount: Number(body.totalDebtAmount ?? 0),
+      activations: {
+        data: actList.map((row) => normalizeActivationRecord(row)),
+        currentPage: actCurrent,
+        pageSize: actSize,
+        totalItems: actTotal,
+        totalPages: Math.max(1, actPages),
+        hasNextPage: act.hasNextPage ?? actCurrent < actPages,
+        hasPreviousPage: act.hasPreviousPage ?? actCurrent > 1,
+        totalCount: actTotal,
+        pageNumber: actCurrent,
+      },
+      debts: {
+        data: debtList,
+        currentPage: debts.currentPage ?? 1,
+        pageSize: debts.pageSize ?? debtList.length,
+        totalItems: debts.totalItems ?? debtList.length,
+        totalPages: debts.totalPages ?? 1,
+        hasNextPage: debts.hasNextPage ?? false,
+        hasPreviousPage: debts.hasPreviousPage ?? false,
+        totalCount: debts.totalItems ?? debtList.length,
+        pageNumber: debts.currentPage ?? 1,
+      },
+      source: body.source,
     };
   }
 
@@ -2716,6 +2848,26 @@ class ApiService {
   }
 
   async updateSubscriber(id: string, subscriberData: SubscriberUpdateRequest): Promise<Subscriber> {
+    if (isPythonBackend()) {
+      const payload: Record<string, unknown> = {
+        username: subscriberData.username,
+        firstName: subscriberData.firstName,
+        lastName: subscriberData.lastName,
+        phoneNumber: subscriberData.phoneNumber,
+        profileId: subscriberData.profileId
+          ? parseInt(String(subscriberData.profileId), 10)
+          : undefined,
+        expirationDate: subscriberData.expirationDate,
+        isActive: subscriberData.isActive,
+        zone: subscriberData.zone,
+        fat: subscriberData.fat,
+        note: subscriberData.note,
+      };
+      if (subscriberData.password?.trim()) {
+        payload.password = subscriberData.password.trim();
+      }
+      return this.updateSasSubscriber(id, payload);
+    }
     const response: AxiosResponse<Subscriber> = await this.api.put(`/subscribers/${id}`, subscriberData);
     return response.data;
   }

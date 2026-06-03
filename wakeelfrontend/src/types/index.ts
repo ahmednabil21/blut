@@ -3283,6 +3283,25 @@ export interface ActivationsListResponse extends PaginatedResponse<ActivationRec
   reseller_id?: number | null;
 }
 
+/** GET /api/subscribers/{id}/details — Python backend (خام) */
+export interface SubscriberDetailsResponse {
+  sas_user_id?: number;
+  subscriber: Record<string, unknown>;
+  totalDebtAmount: number;
+  activations: PaginatedResponse<ActivationRecord>;
+  debts: DebtsListResponse;
+  source?: string;
+}
+
+/** بعد التحويل في apiService.getSubscriberDetails */
+export interface SubscriberDetailsBundle {
+  subscriber: Subscriber;
+  totalDebtAmount: number;
+  activations: PaginatedResponse<ActivationRecord>;
+  debts: PaginatedResponse<Debt>;
+  source?: string;
+}
+
 export interface PaginationParams {
   page?: number;
   pageSize?: number;
