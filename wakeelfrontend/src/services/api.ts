@@ -221,7 +221,6 @@ import {
   WhatsAppPairCodeResponse,
   WhatsAppStatusResponse,
 } from '../types';
-import { getNumberLocale } from '../utils/localeDigits';
 import { formatDisplayDate } from '../utils/formatDisplayDate';
 import { createCashbackReportXlsxBlob } from '../utils/excelExport';
 import { subscriberNoteTypeLabelAr } from '../utils/subscriberNoteTypeLabels';
