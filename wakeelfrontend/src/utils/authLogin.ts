@@ -1,4 +1,5 @@
 import { LoginResponse, User, UserRole } from '../types';
+import { applySasPermissionsToUser, sasPermissionFromLoginPayload } from './mapSasPermissions';
 
 /** قراءة payload JWT (بدون تحقق توقيع — للعرض المحلي فقط) */
 export function parseJwtPayload(token: string): Record<string, unknown> | null {
@@ -107,11 +108,17 @@ export function buildUserFromLoginResponse(response: LoginResponse, loginUsernam
     userIdFromJwt != null
       ? String(userIdFromJwt)
       : sub || loginUsername.trim();
-  const roleLabelAr = (response as LoginResponse & { role_label_ar?: string }).role_label_ar;
+  const lr = response as LoginResponse & {
+    role_label_ar?: string;
+    full_name?: string;
+    permissions?: Record<string, boolean>;
+  };
+  const roleLabelAr = lr.role_label_ar;
   const base: User = {
     id,
     username: (response as LoginResponse & { username?: string }).username?.trim() || loginUsername.trim(),
     fullName:
+      lr.full_name?.trim() ||
       roleLabelAr?.trim() ||
       (nameClaim && nameClaim.trim()) ||
       loginUsername.trim(),
@@ -122,10 +129,12 @@ export function buildUserFromLoginResponse(response: LoginResponse, loginUsernam
     standardPlanTier: response.standardPlanTier ?? undefined,
     maxResellers: response.maxResellers ?? undefined,
   };
+  if (roleStr === 'agent_admin' || roleStr === 'employee' || lr.permissions) {
+    return applySasPermissionsToUser(base, sasPermissionFromLoginPayload(lr as unknown as Record<string, unknown>), roleStr);
+  }
   /** صلاحيات الموظف من استجابة تسجيل الدخول (مثل canAccessDealers) قبل جلب GET /users/me */
   if (role === UserRole.Employee) {
-    const lr = response as LoginResponse & { CanAccessDealers?: boolean };
-    const dealers = lr.canAccessDealers ?? lr.CanAccessDealers;
+    const dealers = lr.canAccessDealers ?? (lr as { CanAccessDealers?: boolean }).CanAccessDealers;
     if (typeof dealers === 'boolean') base.canAccessDealers = dealers;
   }
   return base;

@@ -1495,6 +1495,42 @@ class ApiService {
     await this.api.delete(`/Agents/me/employees/${id}`);
   }
 
+  // --- SAS Panel employees (FastAPI /api/employees) ---
+  async getSasEmployees(): Promise<import('../types/sasEmployeePermissions').SasEmployeeRecord[]> {
+    const response = await this.api.get<import('../types/sasEmployeePermissions').SasEmployeeRecord[]>(
+      '/employees'
+    );
+    return Array.isArray(response.data) ? response.data : [];
+  }
+
+  async getSasPermissionDefinitions(): Promise<
+    { id: string; label_ar: string }[]
+  > {
+    const response = await this.api.get<{ permissions: { id: string; label_ar: string }[] }>(
+      '/employees/permission-definitions'
+    );
+    return response.data?.permissions ?? [];
+  }
+
+  async createSasEmployee(
+    data: import('../types/sasEmployeePermissions').SasEmployeeCreateRequest
+  ): Promise<import('../types/sasEmployeePermissions').SasEmployeeRecord> {
+    const response = await this.api.post('/employees', data);
+    return response.data as import('../types/sasEmployeePermissions').SasEmployeeRecord;
+  }
+
+  async updateSasEmployee(
+    id: number,
+    data: import('../types/sasEmployeePermissions').SasEmployeeUpdateRequest
+  ): Promise<import('../types/sasEmployeePermissions').SasEmployeeRecord> {
+    const response = await this.api.put(`/employees/${id}`, data);
+    return response.data as import('../types/sasEmployeePermissions').SasEmployeeRecord;
+  }
+
+  async deleteSasEmployee(id: number): Promise<void> {
+    await this.api.delete(`/employees/${id}`);
+  }
+
   // --- Employee Tasks ---
   async createEmployeeTask(
     data: import('../types').EmployeeTaskCreateRequest
@@ -2802,7 +2838,7 @@ class ApiService {
     });
     const body = response.data ?? ({} as SubscriberDetailsResponse);
     const act = body.activations ?? { data: [] };
-    const actList = Array.isArray(act.data) ? act.data : [];
+    const actList: unknown[] = Array.isArray(act.data) ? act.data : [];
     const debts = body.debts ?? { data: [] };
     const debtList = Array.isArray(debts.data) ? debts.data : [];
     const subscriberRow = (body.subscriber ?? {}) as Record<string, unknown>;

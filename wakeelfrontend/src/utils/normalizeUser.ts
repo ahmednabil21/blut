@@ -1,5 +1,6 @@
 import { User, UserRole } from '../types';
 import { mapPythonRoleToUserRole, mapRoleStringToUserRole, roleIdToUserRole } from './authLogin';
+import { applySasPermissionsToUser, sasPermissionFromLoginPayload } from './mapSasPermissions';
 
 function pickStr(r: Record<string, unknown>, camel: string, pascal: string): string {
   const a = r[camel];
@@ -62,6 +63,7 @@ export function normalizeUser(raw: unknown): User {
   const username = pickStr(r, 'username', 'Username');
   const fullName =
     pickStr(r, 'fullName', 'FullName') ||
+    pickStr(r, 'full_name', 'FullName') ||
     pickStr(r, 'role_label_ar', 'roleLabelAr') ||
     pickStr(r, 'roleLabelAr', 'RoleLabelAr');
   const isActive = pickBool(r, 'isActive', 'IsActive');
@@ -116,6 +118,17 @@ export function normalizeUser(raw: unknown): User {
   const sed = r.subscriptionEndDate ?? r.SubscriptionEndDate;
   if (typeof ssd === 'string') u.subscriptionStartDate = ssd;
   if (typeof sed === 'string') u.subscriptionEndDate = sed;
+
+  const jobTitle = pickStr(r, 'jobTitle', 'JobTitle') || pickStr(r, 'job_title', 'JobTitle');
+  if (jobTitle) u.jobTitle = jobTitle;
+  const salaryRaw = r.salary ?? r.Salary;
+  if (salaryRaw != null && salaryRaw !== '') u.salary = Number(salaryRaw);
+
+  const roleStr = typeof r.role === 'string' ? r.role : '';
+  const perms = sasPermissionFromLoginPayload(r);
+  if (perms || roleStr === 'agent_admin' || roleStr === 'employee') {
+    return applySasPermissionsToUser(u, perms, roleStr || (u.role === UserRole.Employee ? 'employee' : 'agent_admin'));
+  }
 
   return u;
 }

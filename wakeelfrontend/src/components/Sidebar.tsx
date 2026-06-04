@@ -170,19 +170,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse, onClos
       ],
     },
     {
-      name: 'إدارة الموظفين',
+      name: isPythonBackend() ? 'الموظفون' : 'إدارة الموظفين',
       path: '/admin/employees',
       icon: UserPlus,
-      roles: [UserRole.Agent, UserRole.SubAgent, UserRole.Employee],
-      children: [
-        { name: 'عرض الموظفين', path: '/admin/employees' },
-        { name: 'مهام الموظفين', path: '/admin/employees/tasks', employeeRequiresTaskPermission: true },
-        {
-          name: 'كشوفات الموظفين',
-          path: '/admin/expenses/salary-sheet',
-          employeeRequiresExpenseAccess: true,
-        },
-      ],
+      roles: isPythonBackend()
+        ? [UserRole.Agent, UserRole.Admin, UserRole.Employee]
+        : [UserRole.Agent, UserRole.SubAgent, UserRole.Employee],
+      children: isPythonBackend()
+        ? undefined
+        : [
+            { name: 'عرض الموظفين', path: '/admin/employees' },
+            { name: 'مهام الموظفين', path: '/admin/employees/tasks', employeeRequiresTaskPermission: true },
+            {
+              name: 'كشوفات الموظفين',
+              path: '/admin/expenses/salary-sheet',
+              employeeRequiresExpenseAccess: true,
+            },
+          ],
     },
     {
       name: 'المصاريف العامة',
@@ -235,10 +239,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse, onClos
     },
   ];
 
-  /** الموظف بدون صلاحية لوحة التحكم والمصاريف: يُخفى عنه الباقات، إدارة الموظفين، سجل الحركات، الحسابات، المصاريف العامة، الإعدادات؛ ويُعرض له التفعيلات والديون */
+  /** الموظف بدون صلاحية لوحة التحكم والمصاريف: يُخفى عنه الباقات، إدارة الموظفين، سجل الحركات، الحسابات، المصاريف العامة، الإعدادات */
   const isRestrictedEmployee =
     user?.role === UserRole.Employee &&
-    user.canAccessExpensesAndSalarySheet === false &&
+    user.canAccessExpensesAndSalarySheet !== true &&
     user.canAccessSubscriberDashboard === false;
   const restrictedEmployeeHiddenPaths = [
     '/admin/packages',
@@ -249,8 +253,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse, onClos
     '/admin/settings',
   ];
 
-  const normalizedMenuItems = menuItems.map((item) => {
-    // الموظف: بدون صلاحية كشوفات/مصاريف — رابط مباشر «المهام» فقط (كالسابق)
+  const normalizedMenuItems = menuItems.flatMap((item) => {
+    // الموظف: بدون صلاحية كشوفات/مصاريف — رابط مباشر «المهام» فقط عند وجود صلاحية مهام
     if (user?.role === UserRole.Employee && item.path === '/admin/employees') {
       const hasTasks = !!(
         user?.canReceiveTaskRequests ||
@@ -258,21 +262,28 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse, onClos
         user?.canManageMaterialsAndSales
       );
       const hasExpense = user?.canAccessExpensesAndSalarySheet === true;
+      const showSasEmployees =
+        isPythonBackend() && !!user?.sasCanViewEmployees;
+      if (!hasTasks && !hasExpense && !showSasEmployees) {
+        return [];
+      }
       /** صلاحية المبيعات/المواد: إبقاء مجموعة «إدارة الموظفين» مع العرض والمهام (بدون طيّها إلى رابط مهام فقط). */
       if (user?.canManageMaterialsAndSales && item.children?.length) {
         const children = item.children.filter((c) => {
           if (c.path === '/admin/expenses/salary-sheet' && !hasExpense) return false;
           return true;
         });
-        return { ...item, children };
+        return [{ ...item, children }];
       }
       if (hasTasks && !hasExpense) {
-        return {
-          ...item,
-          name: 'المهام',
-          path: '/admin/employees/tasks',
-          children: undefined,
-        };
+        return [
+          {
+            ...item,
+            name: 'المهام',
+            path: '/admin/employees/tasks',
+            children: undefined,
+          },
+        ];
       }
       if (hasExpense && item.children?.length) {
         const children = item.children.filter((c) => {
@@ -284,27 +295,37 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse, onClos
         if (children.length === 1) {
           const only = children[0];
           if (only.path === '/admin/employees/tasks') {
-            return { ...item, name: 'المهام', path: '/admin/employees/tasks', children: undefined };
+            return [{ ...item, name: 'المهام', path: '/admin/employees/tasks', children: undefined }];
           }
           if (only.path === '/admin/expenses/salary-sheet') {
-            return {
-              ...item,
-              name: 'كشوفات الموظفين',
-              path: '/admin/expenses/salary-sheet',
-              children: undefined,
-            };
+            return [
+              {
+                ...item,
+                name: 'كشوفات الموظفين',
+                path: '/admin/expenses/salary-sheet',
+                children: undefined,
+              },
+            ];
           }
         }
-        return { ...item, children };
+        return [{ ...item, children }];
       }
-      return {
-        ...item,
-        name: 'المهام',
-        path: '/admin/employees/tasks',
-        children: undefined,
-      };
+      if (showSasEmployees && isPythonBackend()) {
+        return [item];
+      }
+      if (!hasTasks) {
+        return [];
+      }
+      return [
+        {
+          ...item,
+          name: 'المهام',
+          path: '/admin/employees/tasks',
+          children: undefined,
+        },
+      ];
     }
-    return item;
+    return [item];
   });
 
   const filteredMenuItems = normalizedMenuItems.filter((item) => {
@@ -312,6 +333,24 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse, onClos
     if (!globalAccess && item.requiredFeature && !hasFeature(item.requiredFeature)) return false;
     if (!globalAccess && item.hiddenWhenFeature && hasFeature(item.hiddenWhenFeature)) return false;
     if (user?.role === UserRole.Employee && item.path === '/admin/dashboard' && !user.canAccessSubscriberDashboard) return false;
+    if (user?.role === UserRole.Employee) {
+      if (item.path === '/admin/debts' && !user.canPayDebt) return false;
+      if (item.path === '/admin/expenses/office' && user.canAccessExpensesAndSalarySheet !== true) return false;
+      if (
+        item.path === '/admin/employees/tasks' &&
+        !user.canReceiveTaskRequests &&
+        !user.canManageEmployeeTasks &&
+        !user.canManageMaterialsAndSales
+      ) {
+        return false;
+      }
+    }
+    if (isPythonBackend() && user?.role === UserRole.Employee) {
+      if (item.path === '/admin/receipts' && user.sasCanAccessActivations === false) return false;
+      if (item.path === '/admin/activity-log' && user.sasCanAccessSystemLog === false) return false;
+      if (item.path === '/admin/cards' && user.sasCanAccessCards === false) return false;
+      if (item.path === '/admin/employees' && !user.sasCanViewEmployees) return false;
+    }
     if (
       user?.role === UserRole.Employee &&
       item.path === '/admin/materials' &&
@@ -345,7 +384,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse, onClos
     user?.canEditSubscriber ||
     user?.canDeleteSubscriber ||
     user?.canPayDebt ||
-    user?.canViewAllSubscribers
+    user?.canViewAllSubscribers ||
+    user?.sasCanViewSubscribersBySearch
   );
   const showOnlyEmployeeTasksInSidebar =
     user?.role === UserRole.Employee &&

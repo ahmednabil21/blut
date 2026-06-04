@@ -36,6 +36,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const ExcelImportPage = lazy(() => import('./pages/ExcelImportPage'));
 const ResellersPage = lazy(() => import('./pages/ResellersPage'));
 const EmployeesPage = lazy(() => import('./pages/EmployeesPage'));
+const SasEmployeesPage = lazy(() => import('./pages/SasEmployeesPage'));
 const EmployeeTasksPage = lazy(() => import('./pages/EmployeeTasksPage'));
 const MaterialsPage = lazy(() => import('./pages/MaterialsPage'));
 const MaterialsDisbursementPage = lazy(() => import('./pages/MaterialsDisbursementPage'));
@@ -86,7 +87,7 @@ function RestrictedEmployeeRoute({ routePath, children }: { routePath: string; c
   const { user } = useAuth();
   const isRestricted =
     user?.role === UserRole.Employee &&
-    user?.canAccessExpensesAndSalarySheet === false &&
+    user?.canAccessExpensesAndSalarySheet !== true &&
     user?.canAccessSubscriberDashboard === false;
   const hiddenPaths = ['packages', 'cards', 'employees', 'reports', 'settings'];
   const isHidden = hiddenPaths.includes(routePath) || routePath.startsWith('expenses');
@@ -95,6 +96,24 @@ function RestrictedEmployeeRoute({ routePath, children }: { routePath: string; c
   const allowPackagesWithSubscriberActivation =
     (routePath === 'packages' || routePath === 'cards') && !!user?.canActivateSubscriber;
   if (isRestricted && isHidden && !allowEmployeesWithSalesPermission && !allowPackagesWithSubscriberActivation) {
+    return <Navigate to="/admin/subscribers" replace />;
+  }
+  return <>{children}</>;
+}
+
+/** صفحة الديون: للموظف فقط عند تفعيل canPayDebt (SAS: can_pay_debt) */
+function EmployeeDebtsAccessRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (user?.role === UserRole.Employee && !user?.canPayDebt) {
+    return <Navigate to="/admin/subscribers" replace />;
+  }
+  return <>{children}</>;
+}
+
+/** صفحة موظفي SAS: للموظف فقط عند can_view_employees */
+function SasEmployeesAccessRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (user?.role === UserRole.Employee && !user?.sasCanViewEmployees) {
     return <Navigate to="/admin/subscribers" replace />;
   }
   return <>{children}</>;
@@ -267,11 +286,19 @@ function App() {
                   
                   {/* Employees - مخفى عن الموظف المقيد */}
                   <Route path="employees" element={
-                    <ProtectedRoute allowedRoles={[UserRole.Agent, UserRole.SubAgent, UserRole.Employee]}>
-                      <RestrictedEmployeeRoute routePath="employees">
-                        <EmployeesPage />
-                      </RestrictedEmployeeRoute>
-                    </ProtectedRoute>
+                    isPythonBackend() ? (
+                      <ProtectedRoute allowedRoles={[UserRole.Agent, UserRole.Admin, UserRole.Employee]}>
+                        <SasEmployeesAccessRoute>
+                          <SasEmployeesPage />
+                        </SasEmployeesAccessRoute>
+                      </ProtectedRoute>
+                    ) : (
+                      <ProtectedRoute allowedRoles={[UserRole.Agent, UserRole.SubAgent, UserRole.Employee]}>
+                        <RestrictedEmployeeRoute routePath="employees">
+                          <EmployeesPage />
+                        </RestrictedEmployeeRoute>
+                      </ProtectedRoute>
+                    )
                   } />
                   <Route path="employees/tasks" element={
                     <ProtectedRoute allowedRoles={[UserRole.Admin, UserRole.Agent, UserRole.SubAgent, UserRole.Employee]}>
@@ -329,7 +356,9 @@ function App() {
                   {/* Debts - Admin, Agent, SubAgent, Employee */}
                   <Route path="debts" element={
                     <ProtectedRoute allowedRoles={[UserRole.Admin, UserRole.Agent, UserRole.SubAgent, UserRole.Employee]}>
-                      <DebtsPage />
+                      <EmployeeDebtsAccessRoute>
+                        <DebtsPage />
+                      </EmployeeDebtsAccessRoute>
                     </ProtectedRoute>
                   } />
                   {/* المصاريف - مخفى عن الموظف المقيد */}

@@ -510,6 +510,26 @@ const SubscribersPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(10);
 
+  const isEmployee = user?.role === UserRole.Employee;
+  const sasSearchOnlyMode =
+    isPythonBackend() &&
+    isEmployee &&
+    !user?.canViewAllSubscribers &&
+    user?.sasCanViewSubscribersBySearch !== false;
+  const requireTwoWordsForSearch =
+    isEmployee &&
+    !user?.canViewAllSubscribers &&
+    (!isPythonBackend() || user?.sasCanViewSubscribersBySearch !== false);
+  const isValidSearchOnlyQuery = (raw: string): boolean => {
+    const term = raw.trim();
+    if (!term) return false;
+    const parsed = parseSubscriberSearchForPython(term);
+    if (parsed.username || parsed.user_id != null) return true;
+    if (parsed.phone) return false;
+    const words = (parsed.subscriber_name ?? term).trim().split(/\s+/).filter(Boolean);
+    return words.length >= 2;
+  };
+
   const {
     data: subscribersResponse,
     error,
@@ -532,7 +552,10 @@ const SubscribersPage: React.FC = () => {
       const noteTypeNum =
         appliedNoteTypeFilter === 'all' ? undefined : (parseInt(appliedNoteTypeFilter, 10) as SubscriberNoteType);
       const rawSearch = debouncedSearchTerm && debouncedSearchTerm.trim() ? debouncedSearchTerm.trim() : '';
-      const employeeRequiresTwoWords = user?.role === UserRole.Employee && !user?.canViewAllSubscribers;
+      const employeeRequiresTwoWords =
+        user?.role === UserRole.Employee &&
+        !user?.canViewAllSubscribers &&
+        (!isPythonBackend() || user?.sasCanViewSubscribersBySearch !== false);
       const searchWords = rawSearch ? rawSearch.split(/\s+/).filter(Boolean) : [];
       const parsedSearch = rawSearch ? parseSubscriberSearchForPython(rawSearch) : {};
       const searchNeedsTwoWords =
@@ -580,7 +603,7 @@ const SubscribersPage: React.FC = () => {
       if (params.expirationToDate === undefined) delete params.expirationToDate;
       return fetchSubscribersWithCache(online, params);
     },
-    enabled: true,
+    enabled: !sasSearchOnlyMode || isValidSearchOnlyQuery(debouncedSearchTerm),
   });
 
   const subscribers = React.useMemo(() => {
@@ -800,7 +823,6 @@ const SubscribersPage: React.FC = () => {
   }, [overdueDebtsResponse]);
 
   /** للموظف: كل إجراء يظهر فقط عند منح صلاحيته بشكل مستقل */
-  const isEmployee = user?.role === UserRole.Employee;
   const showEditSubscriberAction = !isEmployee || !!user?.canEditSubscriber;
   const showDeleteSubscriberAction = !isEmployee || !!user?.canDeleteSubscriber;
   const showViewDetailsAction = !isEmployee || !!user?.canEditSubscriber || !!user?.canDeleteSubscriber;
@@ -808,8 +830,6 @@ const SubscribersPage: React.FC = () => {
   const showActivateSubscriberAction =
     user?.role !== UserRole.Employee || !!user?.canActivateSubscriber;
   const showActivateViaTabAction = showActivateSubscriberAction;
-  /** للموظف بدون صلاحية عرض الكل: إلزام إدخال الاسم الأول والثاني (كلمتين على الأقل) للبحث */
-  const requireTwoWordsForSearch = isEmployee && !user?.canViewAllSubscribers;
   const {
     data: myAgent,
     isLoading: myAgentLoading,
@@ -1955,6 +1975,16 @@ const SubscribersPage: React.FC = () => {
   /** تطبيق البحث؛ للموظف بدون صلاحية عرض الكل يلزم إدخال الاسم الأول والثاني (كلمتين على الأقل) */
   const applySearch = () => {
     const term = searchTerm.trim();
+    if (sasSearchOnlyMode && term) {
+      const parsed = parseSubscriberSearchForPython(term);
+      if (parsed.phone) {
+        showError(
+          'بحث المشتركين',
+          'البحث برقم الهاتف غير مسموح — استخدم الاسم الأول والثاني أو اسم المستخدم.'
+        );
+        return;
+      }
+    }
     if (requireTwoWordsForSearch && term) {
       const parsed = parseSubscriberSearchForPython(term);
       const nameOnly =
@@ -3503,11 +3533,13 @@ const SubscribersPage: React.FC = () => {
           <input
             type="text"
             placeholder={
-              requireTwoWordsForSearch
-                ? 'البحث بالاسم الأول والثاني (كلمتين على الأقل)...'
-                : isPythonBackend()
-                  ? 'الاسم، اسم المستخدم، الهاتف، أو معرّف المشترك...'
-                  : 'البحث بالاسم أو رقم الهاتف...'
+              sasSearchOnlyMode
+                ? 'الاسم الأول والثاني، أو اسم المستخدم، أو معرّف المشترك...'
+                : requireTwoWordsForSearch
+                  ? 'البحث بالاسم الأول والثاني (كلمتين على الأقل)...'
+                  : isPythonBackend()
+                    ? 'الاسم، اسم المستخدم، الهاتف، أو معرّف المشترك...'
+                    : 'البحث بالاسم أو رقم الهاتف...'
             }
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -3524,12 +3556,10 @@ const SubscribersPage: React.FC = () => {
         </button>
       </div>
 
-      {isPythonBackend() && (
-        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-600 dark:text-gray-400">
-          
-        
-       
-        </div>
+      {sasSearchOnlyMode && (
+        <p className="mt-2 text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-md px-3 py-2">
+          صلاحيتك تسمح بعرض المشتركين بعد البحث فقط: الاسم الأول والثاني، أو اسم المستخدم، أو معرّف المشترك.
+        </p>
       )}
 
       {/* Table */}

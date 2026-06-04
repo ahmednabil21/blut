@@ -1121,6 +1121,19 @@ export interface User {
   canReceiveTaskRequests?: boolean;
   canManageEmployeeTasks?: boolean;
   canManageMaterialsAndSales?: boolean;
+  /** SAS Panel — صلاحيات إضافية من FastAPI */
+  sasCanDeleteDebt?: boolean;
+  sasCanAccessActivations?: boolean;
+  sasCanAccessSystemLog?: boolean;
+  sasCanViewEmployees?: boolean;
+  sasCanManageEmployees?: boolean;
+  sasCanAccessCards?: boolean;
+  sasCanSellMaterial?: boolean;
+  sasCanAddMaterial?: boolean;
+  /** SAS: عرض المشتركين بالبحث فقط (بدون canViewAllSubscribers) */
+  sasCanViewSubscribersBySearch?: boolean;
+  jobTitle?: string;
+  salary?: number;
   allowedResellerIds?: string[];
   /** اشتراك الوكيل الرئيسي (عندما role = MainAgent) */
   subscriptionType?: SubscriptionSystemType;
@@ -3283,19 +3296,28 @@ export interface ActivationsListResponse extends PaginatedResponse<ActivationRec
   reseller_id?: number | null;
 }
 
-/** GET /api/subscribers/{id}/details — Python backend (خام) */
+/** GET /api/subscribers/{id}/details — استجابة خام (Python) */
 export interface SubscriberDetailsResponse {
-  sas_user_id?: number;
-  subscriber: Record<string, unknown>;
-  totalDebtAmount: number;
-  activations: PaginatedResponse<ActivationRecord>;
-  debts: DebtsListResponse;
+  subscriber?: Record<string, unknown>;
+  totalDebtAmount?: number;
+  activations?: Partial<PaginatedResponse<unknown>> & {
+    current_page?: number;
+    per_page?: number;
+    total?: number;
+    last_page?: number;
+  };
+  debts?: Partial<PaginatedResponse<Debt>> & {
+    current_page?: number;
+    per_page?: number;
+    total?: number;
+    last_page?: number;
+  };
   source?: string;
 }
 
-/** بعد التحويل في apiService.getSubscriberDetails */
+/** تفاصيل المشترك بعد التطبيع للواجهة (Python) */
 export interface SubscriberDetailsBundle {
-  subscriber: Subscriber;
+  subscriber: Subscriber & { totalDebt?: number };
   totalDebtAmount: number;
   activations: PaginatedResponse<ActivationRecord>;
   debts: PaginatedResponse<Debt>;
