@@ -18,6 +18,7 @@ import {
   Building2,
   Eye,
   X,
+  Wifi,
 } from 'lucide-react';
 import {
   type Subscriber,
@@ -36,6 +37,7 @@ import {
   SubscriptionType,
   PaymentStatus,
   UserRole,
+  type SubscriberSessionRecord,
 } from '../types';
 import { apiService, ApiService } from '../services/api';
 import { isPythonBackend } from '../config/apiConfig';
@@ -51,8 +53,28 @@ import { showSuccess, showError } from '../utils/notifications';
 import { SUBSCRIBER_NOTE_TYPE_LABEL_AR } from '../utils/subscriberNoteTypeLabels';
 
 const RENEWAL_PAGE_SIZE = 10;
+const SESSIONS_PAGE_SIZE = 10;
 const DEBTS_PAGE_SIZE = 10;
 const MAINT_PAGE_SIZE = 10;
+
+function formatSessionOctets(octets?: number | null): string {
+  if (octets == null || !Number.isFinite(octets) || octets < 0) return '—';
+  const units = ['ب', 'ك.ب', 'م.ب', 'ج.ب', 'ت.ب'];
+  let n = octets;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i += 1;
+  }
+  const digits = i === 0 ? 0 : n >= 100 ? 0 : n >= 10 ? 1 : 2;
+  return `${n.toFixed(digits)} ${units[i]}`;
+}
+
+function sessionRowKey(row: SubscriberSessionRecord, index: number): string {
+  const id = row.radacctid;
+  if (id != null && String(id).trim() !== '') return String(id);
+  return `session-${index}-${row.acctstarttime ?? ''}`;
+}
 
 function debtStatusLabel(status: number): string {
   if (status === DebtStatus.Paid) return 'مسدد';
@@ -183,6 +205,7 @@ const SubscriberDetailsPage: React.FC = () => {
     user?.role === UserRole.MainAgent;
   const pythonBackend = isPythonBackend();
   const [renewalPage, setRenewalPage] = useState(1);
+  const [sessionsPage, setSessionsPage] = useState(1);
   const [debtsPage, setDebtsPage] = useState(1);
   const [maintPage, setMaintPage] = useState(1);
   const [reminderSending, setReminderSending] = useState(false);
@@ -191,6 +214,7 @@ const SubscriberDetailsPage: React.FC = () => {
 
   useEffect(() => {
     setRenewalPage(1);
+    setSessionsPage(1);
     setDebtsPage(1);
     setMaintPage(1);
   }, [subscriberId]);
@@ -210,7 +234,22 @@ const SubscriberDetailsPage: React.FC = () => {
         activationsPerPage: RENEWAL_PAGE_SIZE,
         debtsPage,
         debtsPerPage: DEBTS_PAGE_SIZE,
+        includeSessions: false,
       }),
+    enabled: pythonBackend && !!subscriberId,
+  });
+
+  const {
+    data: sessionsPageData,
+    isLoading: sessionsLoading,
+    isFetching: sessionsFetching,
+    isError: sessionsError,
+    error: sessionsErr,
+    refetch: refetchSessions,
+  } = useQuery({
+    queryKey: ['subscriber-sessions-paged', subscriberId, sessionsPage],
+    queryFn: () =>
+      apiService.getSubscriberSessions(subscriberId!, sessionsPage, SESSIONS_PAGE_SIZE),
     enabled: pythonBackend && !!subscriberId,
   });
 
@@ -405,6 +444,13 @@ const SubscriberDetailsPage: React.FC = () => {
   const renewalsBusy = pythonBackend
     ? pythonDetailsLoading || pythonDetailsFetching
     : renewalsLoading || renewalsFetching;
+
+  const sessionsList: SubscriberSessionRecord[] = sessionsPageData?.data ?? [];
+  const sessionsTotalItems = sessionsPageData?.totalItems ?? 0;
+  const sessionsTotalPages = Math.max(1, sessionsPageData?.totalPages ?? 1);
+  const sessionsHasNext = sessionsPageData?.hasNextPage ?? sessionsPage < sessionsTotalPages;
+  const sessionsHasPrev = sessionsPageData?.hasPreviousPage ?? sessionsPage > 1;
+  const sessionsBusy = sessionsLoading || sessionsFetching;
 
   const debtsList: Debt[] = pythonDetails?.debts.data ?? [];
   const debtsTotalItems = pythonDetails?.debts.totalItems ?? 0;
@@ -831,8 +877,124 @@ const SubscriberDetailsPage: React.FC = () => {
           {pythonBackend && (
             <section className="scroll-mt-24">
               <div className="flex items-center gap-3 mb-4">
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200 text-sm font-bold">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-100 dark:bg-sky-900/40 text-sky-800 dark:text-sky-200 text-sm font-bold">
                   3
+                </span>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">سجل الجلسات</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    جلسات الاتصال من SAS (RADIUS)
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200/80 dark:border-gray-700/80 bg-white dark:bg-gray-900/40 shadow-sm overflow-hidden">
+                {sessionsError && (
+                  <div className="p-6 text-center border-b border-gray-100 dark:border-gray-800">
+                    <p className="text-sm text-red-700 dark:text-red-300">{ApiService.showError(sessionsErr)}</p>
+                    <button
+                      type="button"
+                      onClick={() => refetchSessions()}
+                      className="mt-3 px-4 py-2 rounded-lg bg-primary-600 text-white text-sm hover:bg-primary-700"
+                    >
+                      إعادة المحاولة
+                    </button>
+                  </div>
+                )}
+                {sessionsBusy && sessionsPage === 1 && !sessionsError ? (
+                  <div className="flex flex-col items-center py-16">
+                    <RefreshCw className="h-8 w-8 animate-spin text-sky-500 mb-2" />
+                    <p className="text-sm text-gray-500">جاري تحميل سجل الجلسات...</p>
+                  </div>
+                ) : sessionsList.length === 0 && !sessionsBusy && !sessionsError ? (
+                  <div className="text-center py-16 px-4">
+                    <Wifi className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600 mb-3" />
+                    <p className="text-gray-700 dark:text-gray-300 font-medium">لا يوجد سجل جلسات</p>
+                    <p className="text-sm text-gray-500 mt-1">لم تُسجَّل أي جلسة اتصال لهذا المشترك بعد.</p>
+                  </div>
+                ) : !sessionsError ? (
+                  <>
+                    <div className="wakeel-table-scroll overflow-x-auto">
+                      <table className="min-w-[1100px] w-full text-right text-sm">
+                        <thead>
+                          <tr className="bg-sky-50/80 dark:bg-sky-950/20 border-b border-gray-200 dark:border-gray-700">
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">بداية الجلسة</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">نهاية الجلسة</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">IP</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">MAC</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">الباقة</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">سبب الإنهاء</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">تحميل</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">رفع</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sessionsList.map((row, idx) => {
+                            const stopRaw = (row.acctstoptime ?? '').toString().trim();
+                            const isOnline = !stopRaw;
+                            return (
+                              <tr
+                                key={sessionRowKey(row, idx)}
+                                className="border-b border-gray-100 dark:border-gray-800 hover:bg-sky-50/40 dark:hover:bg-sky-950/10"
+                              >
+                                <td className="px-4 py-3 whitespace-nowrap text-gray-800 dark:text-gray-200">
+                                  {row.acctstarttime ? formatDate(row.acctstarttime) : '—'}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  {isOnline ? (
+                                    <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                      متصل الآن
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-700 dark:text-gray-300">{formatDate(row.acctstoptime!)}</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap font-mono text-xs text-gray-800 dark:text-gray-200">
+                                  {row.framedipaddress?.trim() || '—'}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap font-mono text-xs text-gray-700 dark:text-gray-300">
+                                  {row.callingstationid?.trim() || '—'}
+                                </td>
+                                <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{row.profileName?.trim() || '—'}</td>
+                                <td className="px-4 py-3 text-gray-600 dark:text-gray-400 text-xs max-w-[160px] truncate" title={row.acctterminatecause ?? undefined}>
+                                  {isOnline ? '—' : row.acctterminatecause?.trim() || '—'}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap tabular-nums text-gray-800 dark:text-gray-200">
+                                  {formatSessionOctets(row.acctoutputoctets)}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap tabular-nums text-gray-800 dark:text-gray-200">
+                                  {formatSessionOctets(row.acctinputoctets)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {sessionsTotalItems > 0 && (
+                      <Pagination
+                        currentPage={sessionsPage}
+                        totalPages={sessionsTotalPages}
+                        totalItems={sessionsTotalItems}
+                        pageSize={SESSIONS_PAGE_SIZE}
+                        hasNextPage={sessionsHasNext}
+                        hasPreviousPage={sessionsHasPrev}
+                        onPageChange={setSessionsPage}
+                        className="rounded-b-2xl"
+                      />
+                    )}
+                  </>
+                ) : null}
+              </div>
+            </section>
+          )}
+
+          {pythonBackend && (
+            <section className="scroll-mt-24">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200 text-sm font-bold">
+                  4
                 </span>
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white">سجل الديون</h2>
@@ -922,7 +1084,7 @@ const SubscriberDetailsPage: React.FC = () => {
           <section className="scroll-mt-24">
             <div className="flex items-center gap-3 mb-4">
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 dark:bg-violet-900/40 text-violet-800 dark:text-violet-200 text-sm font-bold">
-                {pythonBackend ? '4' : '3'}
+                {pythonBackend ? '5' : '3'}
               </span>
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">سجل الصيانات</h2>

@@ -1041,11 +1041,7 @@ const CustomerInvoicesPage: React.FC = () => {
         ? formatDate(data.updatedAt, { year: 'numeric', month: '2-digit', day: '2-digit' })
         : data.createdAt
           ? formatDate(data.createdAt, { year: 'numeric', month: '2-digit', day: '2-digit' })
-          : new Date().toLocaleString('ar-IQ', {
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-            });
+          : formatDate(new Date());
       const notesLine = (data.notes != null ? String(data.notes) : '').trim() || '—';
       void (async () => {
         const saved = await saveCustomerInvoiceCashReceiptPdf({

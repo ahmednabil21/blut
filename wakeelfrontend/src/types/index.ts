@@ -3296,6 +3296,29 @@ export interface ActivationsListResponse extends PaginatedResponse<ActivationRec
   reseller_id?: number | null;
 }
 
+/** صف جلسة RADIUS من SAS — GET /api/subscribers/{id}/sessions أو details.sessions */
+export interface SubscriberSessionRecord {
+  radacctid?: string | number | null;
+  username?: string | null;
+  acctstarttime?: string | null;
+  acctstoptime?: string | null;
+  framedipaddress?: string | null;
+  callingstationid?: string | null;
+  acctterminatecause?: string | null;
+  acctoutputoctets?: number | null;
+  acctinputoctets?: number | null;
+  /** من profile_details.name */
+  profileName?: string | null;
+}
+
+/** GET /api/subscribers/{id}/sessions */
+export type SubscriberSessionsListResponse = Partial<PaginatedResponse<unknown>> & {
+  current_page?: number;
+  per_page?: number;
+  total?: number;
+  last_page?: number;
+};
+
 /** GET /api/subscribers/{id}/details — استجابة خام (Python) */
 export interface SubscriberDetailsResponse {
   subscriber?: Record<string, unknown>;
@@ -3312,6 +3335,7 @@ export interface SubscriberDetailsResponse {
     total?: number;
     last_page?: number;
   };
+  sessions?: SubscriberSessionsListResponse;
   source?: string;
 }
 
@@ -3321,6 +3345,7 @@ export interface SubscriberDetailsBundle {
   totalDebtAmount: number;
   activations: PaginatedResponse<ActivationRecord>;
   debts: PaginatedResponse<Debt>;
+  sessions?: PaginatedResponse<SubscriberSessionRecord>;
   source?: string;
 }
 

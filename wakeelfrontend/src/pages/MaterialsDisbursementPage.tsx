@@ -12,6 +12,7 @@ import type { MaterialDisbursement } from '../types';
 import { showSuccess, showError } from '../utils/notifications';
 import { useAuth } from '../contexts/AuthContext';
 import { useOffline } from '../contexts/OfflineContext';
+import { formatDisplayDate } from '../utils/formatDisplayDate';
 import { useDigits } from '../contexts/DigitsContext';
 import { fetchAllSubscribersForDisbursePicker } from '../services/offlineSync';
 import { UserRole, type User } from '../types';
@@ -67,17 +68,7 @@ const MaterialsDisbursementPage: React.FC = () => {
 
   /** تاريخ بغداد فقط (يُفصل عن الوقت لعرض أنظف في الجدول). */
   const formatBaghdadDateOnly = React.useCallback(
-    (d: string | Date | undefined | null) => {
-      if (d == null) return '';
-      const date = typeof d === 'string' ? new Date(d) : d;
-      if (Number.isNaN(date.getTime())) return '';
-      return date.toLocaleDateString(locale, {
-        timeZone: 'Asia/Baghdad',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      });
-    },
+    (d: string | Date | undefined | null) => formatDisplayDate(d, undefined, locale),
     [locale]
   );
 

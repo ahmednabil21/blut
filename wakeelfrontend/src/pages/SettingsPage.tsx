@@ -77,6 +77,7 @@ import {
 import { isSasPythonApiEnabled } from '../services/sasPythonApi';
 import { isPythonBackend } from '../config/apiConfig';
 import PythonResellersSettings from '../components/settings/PythonResellersSettings';
+import { formatDisplayDateTime } from '../utils/formatDisplayDate';
 
 /** نقاط تُعرض أثناء استيراد المشتركين — ألوان ومزايا النظام */
 const SUBSCRIBER_IMPORT_FEATURE_LINES = [
@@ -2931,7 +2932,7 @@ function SettingsPage() {
                                     </span>
                                   </td>
                                   <td className="px-3 py-2 text-gray-700 dark:text-gray-300">
-                                    {item.createdAt ? new Date(item.createdAt).toLocaleString('en-GB') : '—'}
+                                    {item.createdAt ? formatDisplayDateTime(item.createdAt) : '—'}
                                   </td>
                                   <td className="px-3 py-2 text-gray-700 dark:text-gray-300">
                                     {item.agent ? (

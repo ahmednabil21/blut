@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { getDigitsMode, setDigitsMode as persistDigitsMode, type DigitsMode } from '../utils/localeDigits';
+import { formatDisplayDate } from '../utils/formatDisplayDate';
 
 type Locale = string;
 
@@ -53,12 +54,11 @@ export const DigitsProvider: React.FC<DigitsProviderProps> = ({ children }) => {
     return opts?.suffix != null ? `${formatted}${opts.suffix}` : formatted;
   }, [locale]);
 
-  const formatDate = useCallback((d: Date | string, options?: Intl.DateTimeFormatOptions) => {
-    if (d == null) return '';
-    const date = typeof d === 'string' ? new Date(d) : d;
-    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
-    return date.toLocaleString(locale, options);
-  }, [locale]);
+  const formatDate = useCallback(
+    (d: Date | string, options?: Intl.DateTimeFormatOptions) =>
+      formatDisplayDate(d, options, locale),
+    [locale]
+  );
 
   const value: DigitsContextType = {
     digitsMode,

@@ -6,8 +6,10 @@ import WifiLoaderComponent from '../components/WifiLoaderComponent';
 import { UserCheck, Copy, Check } from 'lucide-react';
 import { showSuccess, showError } from '../utils/notifications';
 import Pagination from '../components/Pagination';
+import { useDigits } from '../contexts/DigitsContext';
 
 const ResellersPage: React.FC = () => {
+  const { formatDate } = useDigits();
   const [searchTerm, setSearchTerm] = useState('');
   const [appliedSearchTerm, setAppliedSearchTerm] = useState('');
   const [agentNameFilter, setAgentNameFilter] = useState('');
@@ -43,20 +45,6 @@ const ResellersPage: React.FC = () => {
       setTimeout(() => setCopiedField(null), 2000);
     } catch {
       showError('نسخ', 'فشل النسخ.');
-    }
-  };
-
-  const formatDate = (iso: string) => {
-    try {
-      return new Date(iso).toLocaleDateString('ar-IQ', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return iso;
     }
   };
 

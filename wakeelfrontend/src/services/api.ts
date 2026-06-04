@@ -57,6 +57,8 @@ import {
   SubscriberCreateRequest,
   SubscriberDetailsBundle,
   SubscriberDetailsResponse,
+  SubscriberSessionRecord,
+  SubscriberSessionsListResponse,
   SubscriberUpdateRequest,
   SubscriberNotesPatchDto,
   SubscriberInfo,
@@ -220,6 +222,7 @@ import {
   WhatsAppStatusResponse,
 } from '../types';
 import { getNumberLocale } from '../utils/localeDigits';
+import { formatDisplayDate } from '../utils/formatDisplayDate';
 import { createCashbackReportXlsxBlob } from '../utils/excelExport';
 import { subscriberNoteTypeLabelAr } from '../utils/subscriberNoteTypeLabels';
 import { exportSasSubscribersViaPython } from '../utils/sasPythonReseller';
@@ -315,8 +318,7 @@ export function parseSubscriberNoteTypesCatalog(raw: unknown): SubscriberNoteTyp
 /** عندما يعيد السيرفر JSON بدلاً من ملف xlsx (نفس جسم الـ fetch) — نبني ملفاً محلياً حتى لا يفشل التنزيل. */
 function cashBackRowDate(v: unknown): string {
   if (v == null || v === '') return '';
-  const d = new Date(String(v));
-  return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString('ar-IQ');
+  return formatDisplayDate(String(v), { hour: '2-digit', minute: '2-digit' }) || String(v);
 }
 
 /**
@@ -2816,7 +2818,57 @@ class ApiService {
     };
   }
 
-  /** GET /api/subscribers/{id}/details — معلومات + تفعيلات + ديون (Python) */
+  private static normalizeSubscriberSessionRecord(row: unknown): SubscriberSessionRecord {
+    const r = (row && typeof row === 'object' ? row : {}) as Record<string, unknown>;
+    const profile = r.profile_details ?? r.profileDetails;
+    let profileName = '';
+    if (profile && typeof profile === 'object') {
+      const p = profile as Record<string, unknown>;
+      profileName = String(p.name ?? p.profile_name ?? '').trim();
+    }
+    if (!profileName) {
+      profileName = String(r.profile_name ?? r.profileName ?? '').trim();
+    }
+    return {
+      radacctid: (r.radacctid ?? r.rad_acct_id ?? null) as string | number | null,
+      username: (r.username ?? null) as string | null,
+      acctstarttime: (r.acctstarttime ?? r.acct_start_time ?? null) as string | null,
+      acctstoptime: (r.acctstoptime ?? r.acct_stop_time ?? null) as string | null,
+      framedipaddress: (r.framedipaddress ?? r.framed_ip_address ?? null) as string | null,
+      callingstationid: (r.callingstationid ?? r.calling_station_id ?? null) as string | null,
+      acctterminatecause: (r.acctterminatecause ?? r.acct_terminate_cause ?? null) as string | null,
+      acctoutputoctets: Number(r.acctoutputoctets ?? r.acct_output_octets ?? 0) || 0,
+      acctinputoctets: Number(r.acctinputoctets ?? r.acct_input_octets ?? 0) || 0,
+      profileName: profileName || null,
+    };
+  }
+
+  private static mapSubscriberSessionsPage(
+    block: SubscriberSessionsListResponse | undefined
+  ): PaginatedResponse<SubscriberSessionRecord> {
+    const sess = block ?? { data: [] };
+    const list: unknown[] = Array.isArray(sess.data) ? sess.data : [];
+    const current =
+      sess.currentPage ?? (sess as { current_page?: number }).current_page ?? 1;
+    const size =
+      sess.pageSize ?? (sess as { per_page?: number }).per_page ?? (list.length || 10);
+    const total =
+      sess.totalItems ?? (sess as { total?: number }).total ?? list.length;
+    const pages = Math.max(1, sess.totalPages ?? (sess as { last_page?: number }).last_page ?? 1);
+    return {
+      data: list.map((row) => ApiService.normalizeSubscriberSessionRecord(row)),
+      currentPage: current,
+      pageSize: size,
+      totalItems: total,
+      totalPages: pages,
+      hasNextPage: sess.hasNextPage ?? current < pages,
+      hasPreviousPage: sess.hasPreviousPage ?? current > 1,
+      totalCount: total,
+      pageNumber: current,
+    };
+  }
+
+  /** GET /api/subscribers/{id}/details — معلومات + تفعيلات + ديون (+ جلسات اختياري) (Python) */
   async getSubscriberDetails(
     id: string,
     options?: {
@@ -2825,8 +2877,12 @@ class ApiService {
       activationsPerPage?: number;
       debtsPage?: number;
       debtsPerPage?: number;
+      includeSessions?: boolean;
+      sessionsPage?: number;
+      sessionsPerPage?: number;
     }
   ): Promise<SubscriberDetailsBundle> {
+    const includeSessions = options?.includeSessions === true;
     const response = await this.api.get<SubscriberDetailsResponse>(`/subscribers/${id}/details`, {
       params: {
         refresh: options?.refresh === true,
@@ -2834,6 +2890,13 @@ class ApiService {
         activationsPerPage: options?.activationsPerPage ?? 10,
         debtsPage: options?.debtsPage ?? 1,
         debtsPerPage: options?.debtsPerPage ?? 10,
+        includeSessions,
+        ...(includeSessions
+          ? {
+              sessionsPage: options?.sessionsPage ?? 1,
+              sessionsPerPage: options?.sessionsPerPage ?? 10,
+            }
+          : {}),
       },
     });
     const body = response.data ?? ({} as SubscriberDetailsResponse);
@@ -2846,7 +2909,7 @@ class ApiService {
     const actSize = act.pageSize ?? (act as { per_page?: number }).per_page ?? actList.length;
     const actTotal = act.totalItems ?? (act as { total?: number }).total ?? actList.length;
     const actPages = act.totalPages ?? (act as { last_page?: number }).last_page ?? 1;
-    return {
+    const bundle: SubscriberDetailsBundle = {
       subscriber: {
         ...this.mapSasRowToSubscriber(subscriberRow, null),
         totalDebt: Number(body.totalDebtAmount ?? 0),
@@ -2876,6 +2939,27 @@ class ApiService {
       },
       source: body.source,
     };
+    if (includeSessions && body.sessions) {
+      bundle.sessions = ApiService.mapSubscriberSessionsPage(body.sessions);
+    }
+    return bundle;
+  }
+
+  /** GET /api/subscribers/{id}/sessions — جلسات RADIUS مع ترقيم (Python) */
+  async getSubscriberSessions(
+    id: string,
+    page = 1,
+    perPage = 10
+  ): Promise<PaginatedResponse<SubscriberSessionRecord>> {
+    const response = await this.api.get<SubscriberSessionsListResponse | { sessions?: SubscriberSessionsListResponse }>(
+      `/subscribers/${id}/sessions`,
+      { params: { page, perPage } }
+    );
+    const raw = response.data ?? {};
+    const block =
+      (raw as { sessions?: SubscriberSessionsListResponse }).sessions ??
+      (raw as SubscriberSessionsListResponse);
+    return ApiService.mapSubscriberSessionsPage(block);
   }
 
   async createSubscriber(subscriberData: SubscriberCreateRequest): Promise<Subscriber> {
@@ -3632,8 +3716,8 @@ class ApiService {
       r.subscriberUsername ?? subscribersById.get(String(r.subscriberId ?? '')) ?? '',
       r.subscriberPhone ?? '',
       r.newProfileName ?? r.profileName ?? '',
-      r.renewalDate ? new Date(r.renewalDate).toLocaleDateString(getNumberLocale()) : '',
-      r.newExpirationDate ? new Date(r.newExpirationDate).toLocaleDateString(getNumberLocale()) : '',
+      r.renewalDate ? formatDisplayDate(r.renewalDate) : '',
+      r.newExpirationDate ? formatDisplayDate(r.newExpirationDate) : '',
       r.newProfileSalePrice ?? r.finalPrice ?? 0,
       r.amountPaid ?? 0,
       r.remainingAmount ?? 0,

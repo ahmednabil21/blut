@@ -27,6 +27,7 @@ import {
 } from '../utils/iraqCalendar';
 import { styleAccountsExportExcelBlob } from '../utils/excelExport';
 import { subscriberNoteTypeLabelAr } from '../utils/subscriberNoteTypeLabels';
+import { formatDisplayDate, parseApiDateInput } from '../utils/formatDisplayDate';
 
 /**
  * اليوم التقويمي لـ renewalDate بتوقيت بغداد (yyyy-MM-dd).
@@ -67,42 +68,9 @@ function filterLedgerByRenewalBaghdadRange(
   });
 }
 
-function parseApiDateInput(value: string | null | undefined): Date | null {
-  const s = (value ?? '').toString().trim();
-  if (!s) return null;
-  const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(s);
-  if (hasTz) {
-    const d = new Date(s);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-
-  // عند غياب الـ timezone من الباكند، نعتبر التاريخ بتوقيت بغداد المحلي (UTC+3)
-  // لتجنّب انزياح اليوم أثناء الفلترة عند أوقات متأخرة مثل 23:xx.
-  const m = s.match(
-    /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2})(?::(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?)?$/
-  );
-  if (!m) {
-    const fallback = new Date(s);
-    return Number.isNaN(fallback.getTime()) ? null : fallback;
-  }
-  const [, yy, mm, dd, hh = '00', mi = '00', ss = '00', ms = '0'] = m;
-  const millisecond = Number(ms.padEnd(3, '0').slice(0, 3));
-  const utcTs =
-    Date.UTC(Number(yy), Number(mm) - 1, Number(dd), Number(hh), Number(mi), Number(ss), millisecond) -
-    3 * 60 * 60 * 1000;
-  const d = new Date(utcTs);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
 function formatBaghdadDateOnly(value: string | null | undefined): string {
-  const d = parseApiDateInput(value);
-  if (!d) return '—';
-  return new Intl.DateTimeFormat('ar-IQ', {
-    timeZone: 'Asia/Baghdad',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(d);
+  const formatted = formatDisplayDate(value);
+  return formatted || '—';
 }
 
 function ledgerKindLabelAr(kind: AccountLedgerEntryKind): string {

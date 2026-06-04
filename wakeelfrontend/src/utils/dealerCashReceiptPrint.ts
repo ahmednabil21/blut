@@ -1,5 +1,6 @@
 import { sanitizePdfFileName, saveHtmlStringAsPdf } from './saveHtmlStringAsPdf';
 import { amountToArabicIqdWords } from './salesMaterialInvoicePrintHtml';
+import { formatDisplayDate } from './formatDisplayDate';
 
 function escapeHtml(s: string): string {
   return s
@@ -38,12 +39,7 @@ export interface DealerCashReceiptInput {
  */
 export async function saveDealerCashReceiptPdf(input: DealerCashReceiptInput): Promise<boolean> {
   const now = new Date();
-  const issuedDate = now.toLocaleDateString('ar-IQ', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const issuedDateIso = now.toISOString().slice(0, 10);
+  const issuedDate = formatDisplayDate(now);
   const receiptNo = now.getTime().toString().slice(-6);
   const accountantName = (input.accountantName ?? '').trim() || '—';
 
@@ -304,7 +300,7 @@ export async function saveDealerCashReceiptPdf(input: DealerCashReceiptInput): P
         </tr>
         <tr>
           <td class="label">Date:</td>
-          <td class="value num">${escapeHtml(issuedDateIso)}</td>
+          <td class="value num">${escapeHtml(issuedDate)}</td>
         </tr>
       </table>
       <table class="amount-card">

@@ -6,6 +6,7 @@ import {
   ServiceType,
 } from '../types';
 import { ACTIVATION_RECEIPT_BUNDLED_ASSETS } from '../assets/activation-receipt';
+import { formatDisplayDate } from './formatDisplayDate';
 
 /** ملف في `public/` — شعار ثابت لفاتورة التفعيل (من نموذج الوصل) */
 export const ACTIVATION_INVOICE_LOGO_FILENAME = 'activation-invoice-logo.png';
@@ -512,12 +513,10 @@ export function formatActivationReceiptPaymentMethod(raw?: string | null): strin
   return v;
 }
 
-/** تاريخ بصيغة d/M/yyyy كما في نموذج الوصل */
+/** تاريخ بصيغة YYYY/MM/DD */
 export function formatActivationReceiptShortDate(value: string | Date | null | undefined): string {
   if (value == null || value === '') return '';
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+  return formatDisplayDate(value);
 }
 
 export function renewalLikeToActivationPrintPayload(r: Record<string, unknown>): ActivationReceiptPrintPayload {

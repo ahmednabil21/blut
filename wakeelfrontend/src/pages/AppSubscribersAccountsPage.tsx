@@ -13,20 +13,11 @@ import {
 } from '../types';
 import { createXlsxBlob } from '../utils/excelExport';
 import { showError, showSuccess } from '../utils/notifications';
+import { formatDisplayDateTime } from '../utils/formatDisplayDate';
 
 function formatBaghdadDate(value: string | null | undefined): string {
-  const text = (value ?? '').toString().trim();
-  if (!text) return '—';
-  const date = new Date(text);
-  if (Number.isNaN(date.getTime())) return '—';
-  return new Intl.DateTimeFormat('ar-IQ', {
-    timeZone: 'Asia/Baghdad',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
+  const formatted = formatDisplayDateTime(value);
+  return formatted || '—';
 }
 
 function paymentMethodFromTitle(title: string | null | undefined): string {
