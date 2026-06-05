@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { apiService, ApiService, defaultSubscriberNoteTypeOptions } from '../services/api';
@@ -44,6 +44,15 @@ import {
   detectSasPricingHost,
   resolvePackageSalePrice,
 } from '../utils/activatePackagePricing';
+import {
+  mapActivationToRenewalReceipt,
+  sortActivationRecordsNewestFirst,
+} from '../utils/activationRecord';
+import {
+  clearSubscriberListFilters,
+  loadSubscriberListFilters,
+  saveSubscriberListFilters,
+} from '../utils/subscriberListFiltersStorage';
 import { PythonActivateWizard } from '../components/activation/PythonActivateWizard';
 import {
   daysUntilExpiration,
@@ -55,7 +64,7 @@ import {
   statusBadgeClassFromDays,
   statusLabelFromDaysRemaining,
 } from '../utils/subscriberExpiry';
-import { Subscriber, SubscriptionStatus, SubscriptionType, SubscriberCreateRequest, Profile, RenewalData, RenewalActivationMode, PaymentStatus, PaginatedResponse, PaginationParams, UserRole, ServiceType, SubscriberNoteType, EARTHLINK_USER_MANAGEMENT_URL, AgentReseller, ProfilePackageType, formatServiceTypeLabelAr, SUBSCRIBER_FETCH_LIMIT_PRESETS, type SubscriberFetchLimitOption, type CashbackSynchronizationFtthResponse, type CashbackSynchronizationFtthRow, type ZainfiSubscriberDiffResponse, type ZainfiSubscriberDiffItem, type ZainfiApplyExternalExpirationRequest, type ActivationInvoicePrintSettingsDto, type BalanceTopUpRequest, type Dealer, type SubscriberNoteTypeOption, User } from '../types';
+import { Subscriber, SubscriptionStatus, SubscriptionType, SubscriberCreateRequest, Profile, RenewalData, RenewalActivationMode, PaymentStatus, PaginatedResponse, PaginationParams, UserRole, ServiceType, SubscriberNoteType, EARTHLINK_USER_MANAGEMENT_URL, AgentReseller, ProfilePackageType, formatServiceTypeLabelAr, SUBSCRIBER_FETCH_LIMIT_PRESETS, type SubscriberFetchLimitOption, type CashbackSynchronizationFtthResponse, type CashbackSynchronizationFtthRow, type ZainfiSubscriberDiffResponse, type ZainfiSubscriberDiffItem, type ZainfiApplyExternalExpirationRequest, type ActivationInvoicePrintSettingsDto, type BalanceTopUpRequest, type Dealer, type SubscriberNoteTypeOption, User, type RenewalReceipt, type ActivateSubscriberResponse, type ActivatePackageItem } from '../types';
 import {
   buildActivationReceiptPrintHtml,
   embedActivationReceiptStaticImages,
@@ -321,6 +330,61 @@ function filterAutoSyncFtthRowsWithDeviceUsername(
   return { ...res, data, count: data.length };
 }
 
+async function resolvePythonActivationReceipt(
+  username: string,
+  subscriber: Subscriber,
+  pkg: ActivatePackageItem | null,
+  price: number | null,
+  res: ActivateSubscriberResponse
+): Promise<RenewalReceipt> {
+  try {
+    const list = await apiService.getActivations({ username, page: 1, per_page: 5 });
+    const latest = sortActivationRecordsNewestFirst(list.data ?? [])[0];
+    if (latest) {
+      const receipt = mapActivationToRenewalReceipt(latest);
+      receipt.subscriberId = subscriber.id;
+      if (!receipt.subscriberPhone?.trim()) {
+        receipt.subscriberPhone = subscriber.phoneNumber ?? '';
+      }
+      return receipt;
+    }
+  } catch {
+    /* fallback */
+  }
+
+  const now = new Date().toISOString();
+  const profileName = pkg?.profile_name?.trim() || subscriber.profileName || '—';
+  const amount = price ?? subscriber.profilePrice ?? 0;
+  const pin = (res.card_pin ?? '').trim();
+  return {
+    id: pin || String(Date.now()),
+    receiptNumber: pin || String(Date.now()).slice(-8),
+    subscriberId: subscriber.id,
+    subscriberName: subscriber.fullName || subscriber.username,
+    subscriberUsername: subscriber.username,
+    subscriberPhone: subscriber.phoneNumber ?? '',
+    profileName,
+    oldProfileName: subscriber.profileName,
+    newProfileName: profileName,
+    newProfileOriginalPrice: amount,
+    newProfileSalePrice: amount,
+    finalPrice: amount,
+    amountPaid: amount,
+    remainingAmount: 0,
+    discountAmount: 0,
+    discountPercent: 0,
+    renewalPeriod: 30,
+    renewalDays: 30,
+    renewalDate: now,
+    newExpirationDate: subscriber.expirationDate ?? '',
+    paymentStatus: PaymentStatus.Paid,
+    wiFiCode: '',
+    createdAt: now,
+    agentCompanyName: subscriber.agentCompanyName ?? '',
+    activationPin: pin || null,
+  };
+}
+
 const SubscribersPage: React.FC = () => {
   const { confirmDelete } = useConfirmation();
   const { user, isAuthenticated } = useAuth();
@@ -329,23 +393,48 @@ const SubscribersPage: React.FC = () => {
   const navigate = useNavigate();
 
   const [searchParams] = useSearchParams();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<SubscriptionStatus | 'all'>('all');
+  const persistedFilters = useMemo(() => loadSubscriberListFilters(), []);
+  const [searchTerm, setSearchTerm] = useState(
+    () => persistedFilters?.searchTerm ?? persistedFilters?.debouncedSearchTerm ?? ''
+  );
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(
+    () => persistedFilters?.debouncedSearchTerm ?? ''
+  );
+  const [statusFilter, setStatusFilter] = useState<SubscriptionStatus | 'all'>(
+    () => (persistedFilters?.statusFilter as SubscriptionStatus | 'all') ?? 'all'
+  );
   const [connectionStatusFilter, setConnectionStatusFilter] =
-    useState<ConnectionStatusFilter>('all');
-  const [sortColumn, setSortColumn] = useState<string>('expirationDate');
-  const [sortDescending, setSortDescending] = useState<boolean>(true);
-  const [maxDaysUntilExpiry, setMaxDaysUntilExpiry] = useState<string>('');
-  const [appliedMaxDaysUntilExpiry, setAppliedMaxDaysUntilExpiry] = useState<string>('');
-  const [fatFilter, setFatFilter] = useState<string>('');
-  const [zoneFilter, setZoneFilter] = useState<string>('');
-  const [appliedFatFilter, setAppliedFatFilter] = useState<string>('');
-  const [appliedZoneFilter, setAppliedZoneFilter] = useState<string>('');
-  const [noteTypeFilter, setNoteTypeFilter] = useState<string>('all');
-  const [appliedNoteTypeFilter, setAppliedNoteTypeFilter] = useState<string>('all');
-  const [extensionActivationFilter, setExtensionActivationFilter] = useState<boolean>(false);
-  const [appliedExtensionActivationFilter, setAppliedExtensionActivationFilter] = useState<boolean>(false);
+    useState<ConnectionStatusFilter>(() => (persistedFilters?.connectionStatusFilter as ConnectionStatusFilter) ?? 'all');
+  const [sortColumn, setSortColumn] = useState<string>(() => persistedFilters?.sortColumn ?? 'expirationDate');
+  const [sortDescending, setSortDescending] = useState<boolean>(
+    () => persistedFilters?.sortDescending ?? true
+  );
+  const [maxDaysUntilExpiry, setMaxDaysUntilExpiry] = useState<string>(
+    () => persistedFilters?.maxDaysUntilExpiry ?? ''
+  );
+  const [appliedMaxDaysUntilExpiry, setAppliedMaxDaysUntilExpiry] = useState<string>(
+    () => persistedFilters?.appliedMaxDaysUntilExpiry ?? ''
+  );
+  const [fatFilter, setFatFilter] = useState<string>(() => persistedFilters?.fatFilter ?? '');
+  const [zoneFilter, setZoneFilter] = useState<string>(() => persistedFilters?.zoneFilter ?? '');
+  const [appliedFatFilter, setAppliedFatFilter] = useState<string>(
+    () => persistedFilters?.appliedFatFilter ?? ''
+  );
+  const [appliedZoneFilter, setAppliedZoneFilter] = useState<string>(
+    () => persistedFilters?.appliedZoneFilter ?? ''
+  );
+  const [noteTypeFilter, setNoteTypeFilter] = useState<string>(
+    () => persistedFilters?.noteTypeFilter ?? 'all'
+  );
+  const [appliedNoteTypeFilter, setAppliedNoteTypeFilter] = useState<string>(
+    () => persistedFilters?.appliedNoteTypeFilter ?? 'all'
+  );
+  const [extensionActivationFilter, setExtensionActivationFilter] = useState<boolean>(
+    () => persistedFilters?.extensionActivationFilter ?? false
+  );
+  const [appliedExtensionActivationFilter, setAppliedExtensionActivationFilter] = useState<boolean>(
+    () => persistedFilters?.appliedExtensionActivationFilter ?? false
+  );
   const [showAdvancedFilter, setShowAdvancedFilter] = useState(false);
   const [showExcelExportModal, setShowExcelExportModal] = useState(false);
   const [excelExportOmitDates, setExcelExportOmitDates] = useState(false);
@@ -355,10 +444,18 @@ const SubscribersPage: React.FC = () => {
   const [excelExportExecutorUserId, setExcelExportExecutorUserId] = useState('');
   const [excelExportPackageType, setExcelExportPackageType] = useState('');
   const [exportingExcel, setExportingExcel] = useState(false);
-  const [expirationFromDate, setExpirationFromDate] = useState('');
-  const [expirationToDate, setExpirationToDate] = useState('');
-  const [appliedExpirationFromDate, setAppliedExpirationFromDate] = useState('');
-  const [appliedExpirationToDate, setAppliedExpirationToDate] = useState('');
+  const [expirationFromDate, setExpirationFromDate] = useState(
+    () => persistedFilters?.expirationFromDate ?? ''
+  );
+  const [expirationToDate, setExpirationToDate] = useState(
+    () => persistedFilters?.expirationToDate ?? ''
+  );
+  const [appliedExpirationFromDate, setAppliedExpirationFromDate] = useState(
+    () => persistedFilters?.appliedExpirationFromDate ?? ''
+  );
+  const [appliedExpirationToDate, setAppliedExpirationToDate] = useState(
+    () => persistedFilters?.appliedExpirationToDate ?? ''
+  );
   const [showAddModal, setShowAddModal] = useState(false);
   const [showRenewalModal, setShowRenewalModal] = useState(false);
   /** مفتاح الباقة من GET /activate/packages (id:123 أو name:NOVA) */
@@ -379,6 +476,11 @@ const SubscribersPage: React.FC = () => {
   const [lastReceipt, setLastReceipt] = useState<any>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showActionsDropdown, setShowActionsDropdown] = useState(false);
+
+  const clearSubscriberSelection = useCallback(() => {
+    setSelectedIds([]);
+    setShowActionsDropdown(false);
+  }, []);
   const [sendReminderLoading, setSendReminderLoading] = useState(false);
   const [profileSearchInAdd, setProfileSearchInAdd] = useState('');
   const [showProfileDropdownAdd, setShowProfileDropdownAdd] = useState(false);
@@ -507,7 +609,7 @@ const SubscribersPage: React.FC = () => {
     agentResellerId: '',
   });
 
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(() => persistedFilters?.currentPage ?? 1);
   const [pageSize] = useState(10);
 
   const isEmployee = user?.role === UserRole.Employee;
@@ -1080,7 +1182,7 @@ const SubscribersPage: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showProfileDropdownAdd]);
 
-  // Initialize filter from URL parameters
+  // Initialize filter from URL parameters (dashboard links override persisted status)
   useEffect(() => {
     const statusParam = searchParams.get('status');
     if (statusParam) {
@@ -1102,6 +1204,54 @@ const SubscribersPage: React.FC = () => {
       }
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    saveSubscriberListFilters({
+      searchTerm,
+      debouncedSearchTerm,
+      statusFilter: String(statusFilter),
+      connectionStatusFilter,
+      sortColumn,
+      sortDescending,
+      maxDaysUntilExpiry,
+      appliedMaxDaysUntilExpiry,
+      fatFilter,
+      zoneFilter,
+      appliedFatFilter,
+      appliedZoneFilter,
+      noteTypeFilter,
+      appliedNoteTypeFilter,
+      extensionActivationFilter,
+      appliedExtensionActivationFilter,
+      expirationFromDate,
+      expirationToDate,
+      appliedExpirationFromDate,
+      appliedExpirationToDate,
+      currentPage,
+    });
+  }, [
+    searchTerm,
+    debouncedSearchTerm,
+    statusFilter,
+    connectionStatusFilter,
+    sortColumn,
+    sortDescending,
+    maxDaysUntilExpiry,
+    appliedMaxDaysUntilExpiry,
+    fatFilter,
+    zoneFilter,
+    appliedFatFilter,
+    appliedZoneFilter,
+    noteTypeFilter,
+    appliedNoteTypeFilter,
+    extensionActivationFilter,
+    appliedExtensionActivationFilter,
+    expirationFromDate,
+    expirationToDate,
+    appliedExpirationFromDate,
+    appliedExpirationToDate,
+    currentPage,
+  ]);
 
   const profilesList = React.useMemo(() => {
     const raw = (renewalProfiles ?? []) as Profile[];
@@ -1632,7 +1782,7 @@ const SubscribersPage: React.FC = () => {
       setShowOtherDealerTopUpModal(false);
       setShowRenewalModal(false);
       setRenewalViaSasTab(false);
-      setSelectedIds([]);
+      clearSubscriberSelection();
 
       const normalizedReceipt = {
         ...receiptData,
@@ -1699,6 +1849,7 @@ const SubscribersPage: React.FC = () => {
     setPythonActivateStep(1);
     setActivateModalResellerId('');
     setAmountReceivedInFull(true);
+    clearSubscriberSelection();
   };
 
   const openPythonActivateModal = async (subscriber: Subscriber, resellerId?: string) => {
@@ -1801,6 +1952,7 @@ const SubscribersPage: React.FC = () => {
       showSuccess('تمديد', res.message?.trim() || 'تم تمديد المشترك يوماً واحداً');
       void queryClient.invalidateQueries({ queryKey: ['extend-day-status'] });
       void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
+      clearSubscriberSelection();
     },
     onError: (err: unknown) => {
       showError('تمديد', ApiService.showError(err));
@@ -1834,17 +1986,33 @@ const SubscribersPage: React.FC = () => {
         );
         return;
       }
+      const sub = selectedSubscriberForRenewal;
+      const username = (sub?.username ?? activateUsername ?? '').trim();
+      const pkg = selectedActivatePackage;
+      const price = pythonPackagePrice;
+
+      void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
+      void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
+      void queryClient.invalidateQueries({ queryKey: ['activations'] });
+      closeRenewalModal();
+
+      if (sub && username) {
+        try {
+          const receipt = await resolvePythonActivationReceipt(username, sub, pkg, price, res);
+          setLastReceipt(receipt);
+          setShowReceiptModal(true);
+          return;
+        } catch {
+          /* fallback toast below */
+        }
+      }
+
       const sasOk = getActivateSasResponseMessage(res);
       showSuccess(
         'تم التفعيل',
         res.message?.trim() ||
           (sasOk === 'rsp_success' ? 'تم التفعيل بنجاح' : 'تم تفعيل الكارد بنجاح')
       );
-      void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
-      void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
-      void queryClient.invalidateQueries({ queryKey: ['activations'] });
-      closeRenewalModal();
-      setSelectedIds([]);
     },
     onError: (err: unknown) => {
       const msg = formatActivateApiError(err);
@@ -1915,7 +2083,7 @@ const SubscribersPage: React.FC = () => {
     mutationFn: (ids: string[]) => apiService.renewSubscribers(ids),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['subscribers'] });
-      setSelectedIds([]);
+      clearSubscriberSelection();
     },
   });
 
@@ -1925,6 +2093,7 @@ const SubscribersPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['subscribers'] });
       setShowEditModal(false);
       setSelectedSubscriberForEdit(null);
+      clearSubscriberSelection();
     },
   });
   
@@ -1950,7 +2119,9 @@ const SubscribersPage: React.FC = () => {
     setAppliedExpirationFromDate('');
     setAppliedExpirationToDate('');
     setConnectionStatusFilter('all');
+    setStatusFilter('all');
     setCurrentPage(1);
+    clearSubscriberListFilters();
   };
 
   const handleApplyAdvancedFilter = () => {
@@ -2438,6 +2609,7 @@ const SubscribersPage: React.FC = () => {
 
     setShowActionsDropdown(false);
     setSendReminderLoading(false);
+    clearSubscriberSelection();
     if (successCount > 0) {
       showSuccess(
         title,
@@ -2541,6 +2713,7 @@ const SubscribersPage: React.FC = () => {
     try {
       await apiService.sendWhatsAppDetails(subscriber.id);
       showSuccess('إرسال تفاصيل المشترك', 'تم إرسال رسالة الدين او التفاصيل بنجاح. تحقق من وصولها في واتساب المشترك؛ إن لم تصل فراجع سجلات الباكند وجلسة واتساب المربوطة.');
+      clearSubscriberSelection();
     } catch (err: any) {
       const msg = ApiService.showError(err);
       if (/لا يوجد قالب لرسالة تفاصيل المشترك/.test(msg)) {
@@ -2549,6 +2722,7 @@ const SubscribersPage: React.FC = () => {
           await apiService.setDetailsMessage(DEFAULT_DETAILS_TEMPLATE);
           await apiService.sendWhatsAppDetails(subscriber.id);
           showSuccess('إرسال تفاصيل المشترك', 'تم إنشاء القالب الافتراضي وإرسال رسالة الدين او التفاصيل بنجاح.');
+          clearSubscriberSelection();
           return;
         } catch (e: any) {
           showError('إرسال تفاصيل المشترك', getWhatsAppReminderErrorMessage(e));
@@ -2633,6 +2807,7 @@ const SubscribersPage: React.FC = () => {
     try {
       await apiService.sendWhatsAppCustomMessage(subscriber.id);
       showSuccess('إرسال رسالة حر', 'تم إرسال قالب رسالة خاصة بنجاح. تحقق من وصولها في واتساب المشترك.');
+      clearSubscriberSelection();
     } catch (err: any) {
       showError('إرسال رسالة حر', ApiService.showError(err));
     }
@@ -2714,7 +2889,7 @@ const SubscribersPage: React.FC = () => {
     const confirmed = await confirmDelete('مشترك', selectedIds.length);
     if (confirmed) {
       selectedIds.forEach(id => deleteSubscriberMutation.mutate(id));
-      setSelectedIds([]);
+      clearSubscriberSelection();
     }
   };
 
@@ -2875,6 +3050,7 @@ const SubscribersPage: React.FC = () => {
     if (!patch) {
       setShowNoteModal(false);
       setSelectedSubscriberForNote(null);
+      clearSubscriberSelection();
       return;
     }
     try {
@@ -2886,6 +3062,7 @@ const SubscribersPage: React.FC = () => {
     } finally {
       setShowNoteModal(false);
       setSelectedSubscriberForNote(null);
+      clearSubscriberSelection();
     }
   };
 
@@ -4747,10 +4924,10 @@ const SubscribersPage: React.FC = () => {
                 id="post-activation-title"
                 className="text-lg font-semibold text-gray-900 dark:text-white mb-2"
               >
-                تم حفظ التفعيل بنجاح
+                تم التفعيل بنجاح
               </h2>
               <p id="post-activation-desc" className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                رقم الوصل: <span className="font-medium text-gray-900 dark:text-white">{lastReceipt.receiptNumber}</span>
+                رقم الفاتورة: <span className="font-medium text-gray-900 dark:text-white">{lastReceipt.receiptNumber}</span>
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 {lastReceipt.subscriberName}
@@ -4764,18 +4941,18 @@ const SubscribersPage: React.FC = () => {
                 className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-3 text-sm font-semibold text-white hover:bg-primary-700 transition-colors"
               >
                 <Printer className="h-4 w-4" />
-                <span>حفظ وطباعة</span>
+                <span>طباعة</span>
               </button>
               <button
                 type="button"
                 disabled
-                title="سيتم تفعيل إرسال الواتساب لاحقاً"
+                title="قيد التطوير"
                 onClick={() => void handlePostActivationSaveAndWhatsApp()}
                 className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-600 px-4 py-3 text-sm font-medium text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-700/50 cursor-not-allowed"
               >
                 <MessageCircle className="h-4 w-4" />
-                <span>حفظ وإرسال واتساب</span>
-                <span className="text-xs opacity-80">(قريباً)</span>
+                <span>إرسال واتساب</span>
+                <span className="text-xs opacity-80">(قيد التطوير)</span>
               </button>
               <button
                 type="button"
@@ -4827,6 +5004,7 @@ const SubscribersPage: React.FC = () => {
                 onClick={() => {
                   setShowResellerPickerModal(false);
                   setPendingActivateSubscriberId(null);
+                  clearSubscriberSelection();
                 }}
                 className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg"
               >
@@ -5327,7 +5505,10 @@ const SubscribersPage: React.FC = () => {
             <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setPostActivationWhatsApp(null)}
+                onClick={() => {
+                  setPostActivationWhatsApp(null);
+                  clearSubscriberSelection();
+                }}
                 className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md text-sm"
               >
                 إلغاء
@@ -5369,12 +5550,14 @@ const SubscribersPage: React.FC = () => {
           onClose={() => {
             setShowEditModal(false);
             setSelectedSubscriberForEdit(null);
+            clearSubscriberSelection();
           }}
           subscriber={selectedSubscriberForEdit}
           onUpdated={() => {
             queryClient.invalidateQueries({ queryKey: ['subscribers'] });
             setShowEditModal(false);
             setSelectedSubscriberForEdit(null);
+            clearSubscriberSelection();
           }}
         />
       ) : selectedSubscriberForEdit ? (
@@ -5383,6 +5566,7 @@ const SubscribersPage: React.FC = () => {
           onClose={() => {
             setShowEditModal(false);
             setSelectedSubscriberForEdit(null);
+            clearSubscriberSelection();
           }}
           subscriber={selectedSubscriberForEdit}
           profiles={profilesForEditSubscriber}
@@ -5399,6 +5583,7 @@ const SubscribersPage: React.FC = () => {
           onClose={() => {
             setShowNoteModal(false);
             setSelectedSubscriberForNote(null);
+            clearSubscriberSelection();
           }}
           subscriber={selectedSubscriberForNote}
           onSave={handleSaveNote}
