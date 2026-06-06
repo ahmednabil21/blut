@@ -405,6 +405,8 @@ function isUnfilteredSubscribersRequest(params: PaginationParams): boolean {
   if (params.expirationFromDate?.trim()) return false;
   if (params.expirationToDate?.trim()) return false;
   if (params.maxDaysUntilExpiry !== undefined && params.maxDaysUntilExpiry >= 0) return false;
+  const conn = (params.connectionStatus ?? '').trim().toLowerCase();
+  if (conn === 'online' || conn === 'offline') return false;
   return true;
 }
 

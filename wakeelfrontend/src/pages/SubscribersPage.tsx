@@ -642,6 +642,7 @@ const SubscribersPage: React.FC = () => {
     placeholderData: keepPreviousData,
     refetchInterval: (query) => {
       if (!isPythonBackend() || !online) return false;
+      if (connectionStatusFilter !== 'all') return false;
       const bg = query.state.data?.backgroundSync;
       if (bg?.in_progress) return 2500;
       if ((query.state.data?.totalItems ?? 0) === 0 && (bg?.scheduled || bg?.stale)) {
@@ -3489,6 +3490,16 @@ const SubscribersPage: React.FC = () => {
             )}
             {subscribersResponse?.source === 'database' ? (
               <span className="text-gray-400">(من قاعدة البيانات)</span>
+            ) : subscribersResponse?.source === 'sas_live' ? (
+              <span className="text-emerald-600 dark:text-emerald-400">
+                (من SAS مباشرة
+                {connectionStatusFilter === 'online'
+                  ? ' — متصلون'
+                  : connectionStatusFilter === 'offline'
+                    ? ' — غير متصلين'
+                    : ''}
+                )
+              </span>
             ) : null}
             {subscribersFetching &&
             (subscribersResponse?.backgroundSync?.in_progress ||
@@ -3504,7 +3515,7 @@ const SubscribersPage: React.FC = () => {
           <div className="mt-3 p-4 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-lg">
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
               {isPythonBackend()
-                ? 'القائمة من قاعدة البيانات بعد المزامنة. الفلاتر: حالة الاشتراك، حالة الاتصال (أونلاين/أوفلاين)، تاريخ انتهاء محدد (expiration_date)، الاسم، اسم المستخدم، الهاتف، أو معرّف المشترك.'
+                ? 'القائمة من قاعدة البيانات بعد المزامنة. فلتر «حالة الاتصال» (متصل / غير متصل) يجلب مباشرة من SAS (/index/online أو /index/user) ويحدّث online_status محلياً. باقي الفلاتر: حالة الاشتراك، تاريخ انتهاء (expiration_date)، الاسم، اسم المستخدم، الهاتف، أو معرّف المشترك.'
                 : 'الحالة، الكابينة، المنطقة، نوع الملاحظة، ترتيب التاريخ، الأيام حتى الانتهاء، ونطاق تاريخ انتهاء الاشتراك.'}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -3560,8 +3571,8 @@ const SubscribersPage: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white text-sm"
                   >
                     <option value="all">الكل (أونلاين + أوفلاين)</option>
-                    <option value="online">متصل (أونلاين)</option>
-                    <option value="offline">غير متصل (أوفلاين)</option>
+                    <option value="online">متصل — SAS /index/online</option>
+                    <option value="offline">غير متصل — online_status = 0</option>
                   </select>
                 </div>
               )}

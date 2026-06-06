@@ -88,6 +88,10 @@ export function buildPythonSubscribersQueryParams(
   const conn = (params?.connectionStatus ?? '').trim().toLowerCase();
   if (conn === 'online' || conn === 'offline') {
     out.connection_status = conn;
+    // الباكند يجلب مباشرة من SAS (/index/online أو /index/user) — لا حاجة لمزامنة كاملة.
+    out.sync = false;
+  } else {
+    out.sync = params?.sync === true;
   }
 
   const expirationDate = pickExpirationDateYmd(params ?? {});
@@ -106,8 +110,6 @@ export function buildPythonSubscribersQueryParams(
     else if (parsed.phone) out.phone = parsed.phone;
     else if (parsed.subscriber_name) out.subscriber_name = parsed.subscriber_name;
   }
-
-  out.sync = params?.sync === true;
 
   const sortBy = (params?.sortBy ?? 'expirationDate').trim();
   if (sortBy === 'expirationDate' || sortBy === 'expiration') {
@@ -129,6 +131,12 @@ export function buildPythonSubscribersQueryParams(
   }
 
   return out;
+}
+
+/** GET /api/subscribers?connection_status=online|offline — جلب مباشر من SAS (source: sas_live) */
+export function hasPythonConnectionStatusFilter(params?: PaginationParams): boolean {
+  const conn = (params?.connectionStatus ?? '').trim().toLowerCase();
+  return conn === 'online' || conn === 'offline';
 }
 
 export function pythonSubscriptionStatusIdToEnum(id: string): SubscriptionStatus | null {

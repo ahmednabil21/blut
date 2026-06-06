@@ -3379,7 +3379,7 @@ export interface PaginationParams {
   profileId?: string | number;
   /** Python: إجبار مزامنة SAS قبل القراءة (GET ?sync=true) */
   sync?: boolean;
-  /** Python: حالة الاتصال — online | offline (SAS online_status) */
+  /** Python: حالة الاتصال — online (SAS /index/online) | offline (online_status=0 من /index/user) */
   connectionStatus?: 'online' | 'offline' | 'all' | string;
 }
 
