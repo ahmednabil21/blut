@@ -112,7 +112,6 @@ import {
   SasSyncUsingSavedCredentialsResponse,
   SyncSubscribersRequest,
   SyncSubscribersResponse,
-  SubscriberFetchLimitOption,
   ZainfiSyncRequest,
   ZainfiSyncResponse,
   ZainfiSubscriberDiffResponse,
@@ -1469,8 +1468,21 @@ class ApiService {
     return normalizeUser(response.data);
   }
 
-  /** موظفو الوكيل الحالي (Agent) */
+  /** موظفو الوكيل الحالي (Agent) — FastAPI: GET /employees */
   async getMyEmployees(): Promise<User[]> {
+    if (isPythonBackend()) {
+      const sas = await this.getSasEmployees();
+      return sas.map(
+        (e) =>
+          ({
+            id: String(e.id),
+            username: e.username,
+            fullName: e.full_name,
+            isActive: e.is_active,
+            role: UserRole.Employee,
+          }) as User
+      );
+    }
     const response: AxiosResponse<User[]> = await this.api.get('/Agents/me/employees');
     return normalizeUserList(response.data);
   }
@@ -2487,6 +2499,12 @@ class ApiService {
     if (body.activation_mode?.trim()) {
       payload.activation_mode = body.activation_mode.trim();
     }
+    if (body.package_price != null && Number.isFinite(body.package_price)) {
+      payload.package_price = body.package_price;
+    }
+    if (body.amount_paid != null && Number.isFinite(body.amount_paid)) {
+      payload.amount_paid = body.amount_paid;
+    }
     const response = await this.api.post<ActivateSubscriberResponse>('/activate', payload);
     return response.data;
   }
@@ -3355,21 +3373,6 @@ class ApiService {
       data: transformedData,
       totalDebtAmount: raw.totalDebtAmount,
     };
-  }
-
-  async getOverdueUnpaidDebts(params?: DebtsListParams): Promise<DebtsListResponse> {
-    const queryParams = this.buildDebtsQueryParams(params);
-    const response = await this.debtsGet<DebtsListResponse & { data: any[] }>('/Debts/overdue-unpaid', queryParams);
-    const raw = response.data as DebtsListResponse & { data: any[] };
-    const transformedData = (raw.data || []).map((debt: any) => ({
-      ...debt,
-      isPaid: debt.status === 1,
-      agentId: debt.agentId || '',
-      agentName: debt.agentCompanyName || debt.agentName || 'غير محدد',
-      paidDate: debt.paymentCreatedAt ?? debt.paidDate ?? undefined,
-      status: debt.status ?? 0,
-    }));
-    return { ...raw, data: transformedData, totalDebtAmount: raw.totalDebtAmount };
   }
 
   async getSubscriberDebts(subscriberId: string, params?: PaginationParams): Promise<PaginatedResponse<Debt>> {
@@ -4691,22 +4694,6 @@ class ApiService {
       hasNextPage: raw.hasNextPage ?? (raw.currentPage ?? raw.pageNumber ?? 1) < (raw.totalPages ?? 1),
       hasPreviousPage: raw.hasPreviousPage ?? (raw.currentPage ?? raw.pageNumber ?? 1) > 1,
     };
-  }
-
-  /** خيارات حد أقصى لعدد المشتركين المسحوبين — GET …/providers/sas/subscriber-fetch-limit-options (أساس axios = …/wakeel/api) */
-  async getSubscriberFetchLimitOptions(): Promise<SubscriberFetchLimitOption[]> {
-    const response = await this.api.get<unknown>('/providers/sas/subscriber-fetch-limit-options');
-    const raw = response.data;
-    const arr = Array.isArray(raw) ? raw : (raw as { data?: unknown })?.data;
-    if (!Array.isArray(arr)) return [];
-    return arr.map((item: Record<string, unknown>) => {
-      const v = item.value ?? item.Value;
-      const value = v === undefined || v === null || v === '' ? null : Number(v);
-      return {
-        value: value != null && !Number.isNaN(value) ? value : null,
-        label: String(item.label ?? item.Label ?? ''),
-      };
-    });
   }
 
   private static buildFiProviderSyncBody(request: ZainfiSyncRequest): Record<string, unknown> {

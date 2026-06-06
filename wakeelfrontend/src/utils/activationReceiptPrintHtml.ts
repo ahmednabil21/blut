@@ -474,21 +474,39 @@ export function pickOrganizerNameFromRenewalLike(r: Record<string, unknown>): st
   return pickStringFromRecord(r, [
     'organizerName',
     'OrganizerName',
-    'activatedByUserName',
-    'ActivatedByUserName',
-    'createdByUserName',
-    'CreatedByUserName',
     'employeeName',
     'EmployeeName',
+    'employeeFullName',
+    'EmployeeFullName',
+    'activatedByFullName',
+    'ActivatedByFullName',
+    'createdByFullName',
+    'CreatedByFullName',
+    'executedByFullName',
+    'ExecutedByFullName',
     'issuerDisplayName',
     'IssuerDisplayName',
     'performedByName',
     'PerformedByName',
-    'issuedByUserName',
-    'IssuedByUserName',
     'issuerName',
     'IssuerName',
+    'activatedByUserName',
+    'ActivatedByUserName',
+    'createdByUserName',
+    'CreatedByUserName',
+    'issuedByUserName',
+    'IssuedByUserName',
   ]);
+}
+
+/** اسم من قام بالتفعيل/الطباعة — الاسم الكامل يُفضَّل على اسم المستخدم */
+export function resolveCurrentUserOrganizerDisplayName(
+  user?: { fullName?: string | null; username?: string | null } | null
+): string | undefined {
+  const fullName = (user?.fullName ?? '').trim();
+  if (fullName) return fullName;
+  const username = (user?.username ?? '').trim();
+  return username || undefined;
 }
 
 function pickSubscriberPasswordFromRenewalLike(r: Record<string, unknown>): string {
@@ -616,7 +634,7 @@ export function buildActivationReceiptPrintHtml(
     formatDate: (d: string | Date, options?: Intl.DateTimeFormatOptions) => string;
     locale: string;
     appOrigin: string;
-    /** اسم مستخدم من قام بالتفعيل — يُفضَّل على organizerName من الخادم */
+    /** الاسم الكامل لمن قام بالتفعيل/الطباعة — يُفضَّل على organizerName من الخادم */
     fallbackOrganizerName?: string;
     /** صور مضمّنة (data URL) — يُفضَّل عند الطباعة */
     embeddedImages?: ActivationReceiptEmbeddedImages;
@@ -715,33 +733,39 @@ export function buildActivationReceiptPrintHtml(
       object-position: center center;
     }
 
-    .meta-top {
+    .receipt-top {
       display: flex;
+      flex-direction: row;
       justify-content: space-between;
-      align-items: baseline;
+      align-items: flex-start;
       gap: 2mm;
-      font-size: 9.5px;
-      font-weight: 600;
-      margin-bottom: 1.5mm;
-      color: #000;
+      direction: ltr;
+      margin-bottom: 2mm;
+      width: 100%;
     }
 
-    .meta-top .en {
-      direction: ltr;
+    .meta-block {
+      flex: 1 1 auto;
+      min-width: 0;
       text-align: left;
-      unicode-bidi: embed;
+    }
+
+    .meta-line {
+      font-size: 9.5px;
+      font-weight: 600;
+      color: #000;
+      line-height: 1.45;
       font-family: Tahoma, Arial, sans-serif;
     }
 
     .credentials {
+      flex: 0 0 auto;
       font-size: 10px;
       font-weight: 600;
-      margin-bottom: 2mm;
       line-height: 1.5;
       text-align: right;
       color: #000;
-      white-space: pre-wrap;
-      word-break: break-word;
+      white-space: nowrap;
       font-family: Tahoma, "Noto Naskh Arabic", Arial, sans-serif;
     }
 
@@ -872,11 +896,13 @@ export function buildActivationReceiptPrintHtml(
 <body>
   <div class="paper">
     <img src="${escapeHtml(logoSrc)}" class="logo" alt="" />
-    <div class="meta-top">
-      <span class="en">Date: ${escapeHtml(issueDateStr || '—')}</span>
-      <span class="en">No: ${escapeHtml(receipt.receiptNumber || '—')}</span>
+    <div class="receipt-top">
+      <div class="meta-block">
+        <div class="meta-line">Date: ${escapeHtml(issueDateStr || '—')}</div>
+        <div class="meta-line">No: ${escapeHtml(receipt.receiptNumber || '—')}</div>
+      </div>
+      <div class="credentials">Username&nbsp;: ${escapeHtml(username)}<br/>Password&nbsp;: ${escapeHtml(password)}</div>
     </div>
-    <div class="credentials">Username&nbsp;&nbsp;: ${escapeHtml(username)}<br/>Password&nbsp;: ${escapeHtml(password)}</div>
     ${fieldRow('اسم المشترك:', receipt.subscriberName || '—')}
     ${fieldRow('فئة الاشتراك:', receipt.newProfileName || '—')}
     ${fieldRow('مبلغ الاشتراك:', `${fmtNum(subscriptionAmount)}`)}

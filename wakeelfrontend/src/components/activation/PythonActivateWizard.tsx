@@ -130,6 +130,7 @@ export function PythonActivateWizard({
       {remaining > 0 && (
         <p className="text-sm text-amber-700 dark:text-amber-300 tabular-nums">
           متبقي: {formatNumber(remaining, { suffix: ' د.ع' })}
+          <span className="block text-xs font-normal mt-0.5">سيُسجَّل كدين عند التفعيل</span>
         </p>
       )}
     </div>

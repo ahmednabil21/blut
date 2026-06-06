@@ -3228,6 +3228,10 @@ export interface ActivateSubscriberRequest {
   sync_codes?: boolean;
   mock?: boolean;
   activation_mode?: string;
+  /** سعر الباقة (د.ع) */
+  package_price?: number;
+  /** المبلغ الواصل — إن كان أقل يُسجَّل دين */
+  amount_paid?: number;
 }
 
 export interface ActivateSubscriberResponse {
@@ -3237,6 +3241,11 @@ export interface ActivateSubscriberResponse {
   username?: string;
   card_pin?: string;
   activation_mode?: string;
+  debt_created?: boolean;
+  debt_remaining?: number;
+  debt?: Record<string, unknown>;
+  package_price?: number;
+  amount_paid?: number;
   sas_response?: { message?: string; status?: unknown; [key: string]: unknown };
   sasResponse?: { message?: string; status?: unknown; [key: string]: unknown };
   preflight?: Record<string, unknown>;

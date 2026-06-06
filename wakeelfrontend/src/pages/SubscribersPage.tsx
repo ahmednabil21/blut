@@ -34,6 +34,7 @@ import {
 } from '../utils/selectedReseller';
 import {
   formatActivateApiError,
+  formatActivateDebtSuccessSuffix,
   getActivateSasResponseMessage,
   isActivateMissingSubscriberError,
   isActivateSuccessResponse,
@@ -45,6 +46,7 @@ import {
   resolvePackageSalePrice,
 } from '../utils/activatePackagePricing';
 import {
+  applyActivateDebtToRenewalReceipt,
   mapActivationToRenewalReceipt,
   sortActivationRecordsNewestFirst,
 } from '../utils/activationRecord';
@@ -64,13 +66,14 @@ import {
   statusBadgeClassFromDays,
   statusLabelFromDaysRemaining,
 } from '../utils/subscriberExpiry';
-import { Subscriber, SubscriptionStatus, SubscriptionType, SubscriberCreateRequest, Profile, RenewalData, RenewalActivationMode, PaymentStatus, PaginatedResponse, PaginationParams, UserRole, ServiceType, SubscriberNoteType, EARTHLINK_USER_MANAGEMENT_URL, AgentReseller, ProfilePackageType, formatServiceTypeLabelAr, SUBSCRIBER_FETCH_LIMIT_PRESETS, type SubscriberFetchLimitOption, type CashbackSynchronizationFtthResponse, type CashbackSynchronizationFtthRow, type ZainfiSubscriberDiffResponse, type ZainfiSubscriberDiffItem, type ZainfiApplyExternalExpirationRequest, type ActivationInvoicePrintSettingsDto, type BalanceTopUpRequest, type Dealer, type SubscriberNoteTypeOption, User, type RenewalReceipt, type ActivateSubscriberResponse, type ActivatePackageItem } from '../types';
+import { Subscriber, SubscriptionStatus, SubscriptionType, SubscriberCreateRequest, Profile, RenewalData, RenewalActivationMode, PaymentStatus, PaginatedResponse, PaginationParams, UserRole, ServiceType, SubscriberNoteType, EARTHLINK_USER_MANAGEMENT_URL, AgentReseller, ProfilePackageType, formatServiceTypeLabelAr, SUBSCRIBER_FETCH_LIMIT_PRESETS, type CashbackSynchronizationFtthResponse, type CashbackSynchronizationFtthRow, type ZainfiSubscriberDiffResponse, type ZainfiSubscriberDiffItem, type ZainfiApplyExternalExpirationRequest, type ActivationInvoicePrintSettingsDto, type BalanceTopUpRequest, type Dealer, type SubscriberNoteTypeOption, User, type RenewalReceipt, type ActivateSubscriberResponse, type ActivatePackageItem, type CardSeriesSyncResult } from '../types';
 import {
   buildActivationReceiptPrintHtml,
   embedActivationReceiptStaticImages,
   enrichActivationPrintPayload,
   openActivationReceiptPrintWindow,
   renewalLikeToActivationPrintPayload,
+  resolveCurrentUserOrganizerDisplayName,
 } from '../utils/activationReceiptPrintHtml';
 import { getBaghdadDefaultExportRangeLast30Days, getBaghdadRangeBoundsIso, getBaghdadTodayYmd } from '../utils/iraqCalendar';
 import { styleAccountsExportExcelBlob } from '../utils/excelExport';
@@ -335,17 +338,25 @@ async function resolvePythonActivationReceipt(
   subscriber: Subscriber,
   pkg: ActivatePackageItem | null,
   price: number | null,
-  res: ActivateSubscriberResponse
+  res: ActivateSubscriberResponse,
+  paidAmount?: number | null
 ): Promise<RenewalReceipt> {
+  const packagePrice = res.package_price ?? price ?? subscriber.profilePrice ?? 0;
+  const amountPaid = res.amount_paid ?? paidAmount ?? packagePrice;
+
   try {
     const list = await apiService.getActivations({ username, page: 1, per_page: 5 });
     const latest = sortActivationRecordsNewestFirst(list.data ?? [])[0];
     if (latest) {
-      const receipt = mapActivationToRenewalReceipt(latest);
+      let receipt = mapActivationToRenewalReceipt(latest);
       receipt.subscriberId = subscriber.id;
       if (!receipt.subscriberPhone?.trim()) {
         receipt.subscriberPhone = subscriber.phoneNumber ?? '';
       }
+      receipt = applyActivateDebtToRenewalReceipt(receipt, res, {
+        packagePrice,
+        amountPaid,
+      });
       return receipt;
     }
   } catch {
@@ -354,9 +365,8 @@ async function resolvePythonActivationReceipt(
 
   const now = new Date().toISOString();
   const profileName = pkg?.profile_name?.trim() || subscriber.profileName || '—';
-  const amount = price ?? subscriber.profilePrice ?? 0;
   const pin = (res.card_pin ?? '').trim();
-  return {
+  let receipt: RenewalReceipt = {
     id: pin || String(Date.now()),
     receiptNumber: pin || String(Date.now()).slice(-8),
     subscriberId: subscriber.id,
@@ -366,10 +376,10 @@ async function resolvePythonActivationReceipt(
     profileName,
     oldProfileName: subscriber.profileName,
     newProfileName: profileName,
-    newProfileOriginalPrice: amount,
-    newProfileSalePrice: amount,
-    finalPrice: amount,
-    amountPaid: amount,
+    newProfileOriginalPrice: packagePrice,
+    newProfileSalePrice: packagePrice,
+    finalPrice: packagePrice,
+    amountPaid,
     remainingAmount: 0,
     discountAmount: 0,
     discountPercent: 0,
@@ -383,6 +393,7 @@ async function resolvePythonActivationReceipt(
     agentCompanyName: subscriber.agentCompanyName ?? '',
     activationPin: pin || null,
   };
+  return applyActivateDebtToRenewalReceipt(receipt, res, { packagePrice, amountPaid });
 }
 
 const SubscribersPage: React.FC = () => {
@@ -491,6 +502,27 @@ const SubscribersPage: React.FC = () => {
   const renewalGeneralNotesTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const columnSettingsRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+  /** مزامنة سلاسل الكروت — يُشارك بين فتح المودال (خلفية) والتفعيل الفعلي */
+  const cardSeriesSyncPromiseRef = useRef<Promise<CardSeriesSyncResult | null> | null>(null);
+
+  const triggerCardSeriesSync = useCallback((): Promise<CardSeriesSyncResult | null> => {
+    if (cardSeriesSyncPromiseRef.current) {
+      return cardSeriesSyncPromiseRef.current;
+    }
+    const promise = apiService
+      .syncCardSeries()
+      .then((res) => {
+        void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
+        void queryClient.invalidateQueries({ queryKey: ['activate-packages'] });
+        return res;
+      })
+      .catch(() => null)
+      .finally(() => {
+        cardSeriesSyncPromiseRef.current = null;
+      });
+    cardSeriesSyncPromiseRef.current = promise;
+    return promise;
+  }, [queryClient]);
 
   const isAgentOrSubAgentOrEmployee =
     user?.role === UserRole.Agent || user?.role === UserRole.SubAgent || user?.role === UserRole.Employee;
@@ -914,17 +946,6 @@ const SubscribersPage: React.FC = () => {
     });
   }, [showAddModal, selectedOperationalResellerId, profilesForCreate]);
 
-  const { data: overdueDebtsResponse } = useQuery({
-    queryKey: ['overdue-unpaid-debts', 'subscriber-ids'],
-    queryFn: () => apiService.getOverdueUnpaidDebts({ page: 1, pageSize: 10000 }),
-    enabled: true,
-  });
-
-  const subscriberIdsWithOverdueDebt = React.useMemo(() => {
-    const debts = overdueDebtsResponse?.data ?? [];
-    return new Set(debts.map((d) => d.subscriberId));
-  }, [overdueDebtsResponse]);
-
   /** للموظف: كل إجراء يظهر فقط عند منح صلاحيته بشكل مستقل */
   const showEditSubscriberAction = !isEmployee || !!user?.canEditSubscriber;
   const showDeleteSubscriberAction = !isEmployee || !!user?.canDeleteSubscriber;
@@ -987,17 +1008,7 @@ const SubscribersPage: React.FC = () => {
     staleTime: 60_000,
   });
 
-  const { data: subscriberFetchLimitOptions = [] } = useQuery({
-    queryKey: ['subscriber-fetch-limit-options'],
-    queryFn: () => apiService.getSubscriberFetchLimitOptions(),
-    enabled: canSyncSas,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-  });
-  const subscriberFetchLimitSelectOptions = React.useMemo((): SubscriberFetchLimitOption[] => {
-    if (subscriberFetchLimitOptions.length > 0) return subscriberFetchLimitOptions;
-    return SUBSCRIBER_FETCH_LIMIT_PRESETS;
-  }, [subscriberFetchLimitOptions]);
+  const subscriberFetchLimitSelectOptions = SUBSCRIBER_FETCH_LIMIT_PRESETS;
 
   const subscribersDbSyncMutation = useMutation({
     mutationFn: () => apiService.syncPythonSubscribers(),
@@ -1890,6 +1901,7 @@ const SubscribersPage: React.FC = () => {
     setShowRenewalModal(true);
     void queryClient.invalidateQueries({ queryKey: ['activate-modes', rid] });
     void queryClient.invalidateQueries({ queryKey: ['activate-packages'] });
+    void triggerCardSeriesSync();
   };
 
   const extendDayTargetSubscriber = useMemo(() => {
@@ -1969,12 +1981,21 @@ const SubscribersPage: React.FC = () => {
         activateSelectedPackageKey
       );
       const pkg = selectedActivatePackage;
+      await triggerCardSeriesSync();
+      const packagePrice = pythonPackagePrice!;
+      const rawPaid = renewalData.amountPaid;
+      const amountPaid =
+        rawPaid != null && Number.isFinite(Number(rawPaid))
+          ? Math.max(0, Math.min(packagePrice, Number(rawPaid)))
+          : packagePrice;
       return apiService.activateSubscriber({
         username,
         profile_id: profileId ?? pkg?.profile_id,
         profile_name: profileName ?? pkg?.profile_name,
         sync_codes: true,
         mock: false,
+        package_price: packagePrice,
+        amount_paid: amountPaid,
       });
     },
     onSuccess: async (res) => {
@@ -1991,17 +2012,31 @@ const SubscribersPage: React.FC = () => {
       const username = (sub?.username ?? activateUsername ?? '').trim();
       const pkg = selectedActivatePackage;
       const price = pythonPackagePrice;
+      const paidAmount = renewalData.amountPaid;
 
       void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
       void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
       void queryClient.invalidateQueries({ queryKey: ['activations'] });
+      void queryClient.invalidateQueries({ queryKey: ['debts'] });
       closeRenewalModal();
+
+      const debtSuffix = formatActivateDebtSuccessSuffix(res, formatNumber);
 
       if (sub && username) {
         try {
-          const receipt = await resolvePythonActivationReceipt(username, sub, pkg, price, res);
+          const receipt = await resolvePythonActivationReceipt(
+            username,
+            sub,
+            pkg,
+            price,
+            res,
+            paidAmount
+          );
           setLastReceipt(receipt);
           setShowReceiptModal(true);
+          if (debtSuffix) {
+            showSuccess('تم التفعيل', `تم التفعيل بنجاح${debtSuffix}`);
+          }
           return;
         } catch {
           /* fallback toast below */
@@ -2011,8 +2046,8 @@ const SubscribersPage: React.FC = () => {
       const sasOk = getActivateSasResponseMessage(res);
       showSuccess(
         'تم التفعيل',
-        res.message?.trim() ||
-          (sasOk === 'rsp_success' ? 'تم التفعيل بنجاح' : 'تم تفعيل الكارد بنجاح')
+        (res.message?.trim() ||
+          (sasOk === 'rsp_success' ? 'تم التفعيل بنجاح' : 'تم تفعيل الكارد بنجاح')) + debtSuffix
       );
     },
     onError: (err: unknown) => {
@@ -2541,7 +2576,7 @@ const SubscribersPage: React.FC = () => {
       locale,
       appOrigin,
       embeddedImages,
-      fallbackOrganizerName: (user?.username || '').trim() || undefined,
+      fallbackOrganizerName: resolveCurrentUserOrganizerDisplayName(user),
     });
 
     try {
@@ -3835,7 +3870,6 @@ const SubscribersPage: React.FC = () => {
                   key={subscriber.id}
                   className={subscriberConnectionRowClass(subscriber, {
                     isPython: isPythonBackend(),
-                    hasOverdueDebt: subscriberIdsWithOverdueDebt.has(subscriber.id),
                   })}
                 >
                   <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-4">
@@ -4944,6 +4978,11 @@ const SubscribersPage: React.FC = () => {
                 {lastReceipt.subscriberName}
                 {lastReceipt.newProfileName ? ` — ${lastReceipt.newProfileName}` : ''}
               </p>
+              {(lastReceipt.remainingAmount ?? 0) > 0 && (
+                <p className="text-sm font-medium text-amber-700 dark:text-amber-300 mt-2">
+                  تم تسجيل دين: {formatNumber(lastReceipt.remainingAmount ?? 0, { suffix: ' د.ع' })}
+                </p>
+              )}
             </div>
             <div className="flex flex-col gap-2 p-4 pt-0 border-t border-gray-200 dark:border-gray-700">
               <button

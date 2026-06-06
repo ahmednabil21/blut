@@ -4,6 +4,7 @@ const SAS_MESSAGE_AR: Record<string, string> = {
   rsp_error_card_not_found: 'كود الشحن غير موجود أو مستخدم على SAS',
   rsp_error_invalid_pin: 'كود الشحن غير صالح',
   rsp_invalid_profile: 'الباقة لا تطابق كود الشحن أو المشترك',
+  rsp_card_used: 'كود الشحن مستخدم على SAS — جاري تحديث المخزون',
   rsp_success: 'تم التفعيل بنجاح',
 };
 
@@ -91,4 +92,37 @@ export function isActivateSuccessResponse(res: {
     return false;
   }
   return res.success === true || res.success == null;
+}
+
+export function getActivateDebtRemaining(res: {
+  debt_created?: boolean;
+  debt_remaining?: number;
+  package_price?: number;
+  amount_paid?: number;
+  debt?: { amount?: unknown };
+}): number {
+  if (res.debt_remaining != null && Number.isFinite(Number(res.debt_remaining))) {
+    return Math.max(0, Number(res.debt_remaining));
+  }
+  const debtObj = res.debt;
+  if (debtObj && typeof debtObj === 'object' && debtObj.amount != null) {
+    const n = Number(debtObj.amount);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  if (!res.debt_created) return 0;
+  const pkg = res.package_price;
+  const paid = res.amount_paid;
+  if (pkg != null && paid != null && Number.isFinite(Number(pkg)) && Number.isFinite(Number(paid))) {
+    return Math.max(0, Number(pkg) - Number(paid));
+  }
+  return 0;
+}
+
+export function formatActivateDebtSuccessSuffix(
+  res: { debt_created?: boolean; debt_remaining?: number; package_price?: number; amount_paid?: number; debt?: { amount?: unknown } },
+  formatNumber: (n: number, opts?: { suffix?: string }) => string
+): string {
+  const remaining = getActivateDebtRemaining(res);
+  if (remaining <= 0) return '';
+  return ` — تم تسجيل دين: ${formatNumber(remaining, { suffix: ' د.ع' })}`;
 }

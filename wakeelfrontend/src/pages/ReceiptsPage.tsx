@@ -13,6 +13,7 @@ import {
   enrichActivationPrintPayload,
   openActivationReceiptPrintWindow,
   renewalLikeToActivationPrintPayload,
+  resolveCurrentUserOrganizerDisplayName,
 } from '../utils/activationReceiptPrintHtml';
 import { isPythonBackend } from '../config/apiConfig';
 import { fetchReceiptsWithCache } from '../services/offlineSync';
@@ -399,7 +400,7 @@ const ReceiptsPage: React.FC = () => {
         locale,
         appOrigin,
         embeddedImages,
-        fallbackOrganizerName: (user?.username || '').trim() || undefined,
+        fallbackOrganizerName: resolveCurrentUserOrganizerDisplayName(user),
       }
     );
 

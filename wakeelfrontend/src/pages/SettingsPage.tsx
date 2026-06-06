@@ -39,7 +39,6 @@ import {
   ZAINFI_DEFAULT_BASE_URL,
   FIBERX_DEFAULT_BASE_URL,
   SUBSCRIBER_FETCH_LIMIT_PRESETS,
-  type SubscriberFetchLimitOption,
 } from '../types';
 import {
   Settings,
@@ -746,17 +745,7 @@ function SettingsPage() {
     queryFn: () => apiService.getMyResellers(),
     enabled: isAgentOrSubAgent,
   });
-  const { data: zainfiFetchLimitOptions = [] } = useQuery({
-    queryKey: ['subscriber-fetch-limit-options'],
-    queryFn: () => apiService.getSubscriberFetchLimitOptions(),
-    enabled: isAgentOrSubAgent && activeSection === 'resellers',
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-  });
-  const zainfiFetchLimitSelectOptions = useMemo((): SubscriberFetchLimitOption[] => {
-    if (zainfiFetchLimitOptions.length > 0) return zainfiFetchLimitOptions;
-    return SUBSCRIBER_FETCH_LIMIT_PRESETS;
-  }, [zainfiFetchLimitOptions]);
+  const zainfiFetchLimitSelectOptions = SUBSCRIBER_FETCH_LIMIT_PRESETS;
   const [resellerFormId, setResellerFormId] = useState<string | null>(null);
   const [showResellerForm, setShowResellerForm] = useState(false);
   const [resellerName, setResellerName] = useState('');

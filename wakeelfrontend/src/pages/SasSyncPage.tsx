@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiService } from '../services/api';
 import { ApiService } from '../services/api';
@@ -9,7 +9,6 @@ import {
   SUBSCRIBER_FETCH_LIMIT_PRESETS,
   type SasOverviewDataItem,
   type SasSyncRequest,
-  type SubscriberFetchLimitOption,
 } from '../types';
 import { RefreshCw, Key, Globe, User, Loader2, Shield, FileJson } from 'lucide-react';
 
@@ -60,16 +59,7 @@ const SasSyncPage: React.FC = () => {
 
   const agents = agentsData?.data ?? [];
 
-  const { data: subscriberFetchLimitOptions = [] } = useQuery({
-    queryKey: ['subscriber-fetch-limit-options'],
-    queryFn: () => apiService.getSubscriberFetchLimitOptions(),
-    staleTime: 60_000,
-  });
-
-  const limitSelectOptions = useMemo((): SubscriberFetchLimitOption[] => {
-    if (subscriberFetchLimitOptions.length > 0) return subscriberFetchLimitOptions;
-    return SUBSCRIBER_FETCH_LIMIT_PRESETS;
-  }, [subscriberFetchLimitOptions]);
+  const limitSelectOptions = SUBSCRIBER_FETCH_LIMIT_PRESETS;
 
   const syncMutation = useMutation({
     mutationFn: () => {

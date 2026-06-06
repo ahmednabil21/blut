@@ -17,7 +17,7 @@ import type {
   DebtsListResponse,
   SubscribersDashboardStats,
 } from '../types';
-import { SubscriptionStatus } from '../types';
+import { SubscriptionStatus, DebtStatus } from '../types';
 
 const DASHBOARD_STATS_CACHE_KEY = 'wakeel_dashboard_stats';
 
@@ -530,7 +530,7 @@ export async function fetchDebtsWithCache(
     if (!online) return empty();
     try {
       return useOverdue
-        ? await apiService.getOverdueUnpaidDebts(params)
+        ? await apiService.getAllDebts({ ...params, status: DebtStatus.Unpaid, maxDaysUntilExpiry: 0 })
         : await apiService.getAllDebts(params);
     } catch {
       return empty();
@@ -554,7 +554,7 @@ export async function fetchDebtsWithCache(
   if (online) {
     try {
       const res = useOverdue
-        ? await apiService.getOverdueUnpaidDebts(params)
+        ? await apiService.getAllDebts({ ...params, status: DebtStatus.Unpaid, maxDaysUntilExpiry: 0 })
         : await apiService.getAllDebts(params);
       if (res?.data?.length) await cacheDebts(res.data);
       return res;

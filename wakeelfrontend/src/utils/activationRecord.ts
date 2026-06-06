@@ -1,4 +1,5 @@
-import { PaymentStatus, type ActivationRecord, type RenewalReceipt } from '../types';
+import { PaymentStatus, type ActivationRecord, type RenewalReceipt, type ActivateSubscriberResponse } from '../types';
+import { getActivateDebtRemaining } from './activateApiErrors';
 
 function parseMoney(v: string | number | null | undefined): number {
   if (v == null || v === '') return 0;
@@ -103,6 +104,29 @@ export function mapActivationToRenewalReceipt(row: ActivationRecord): RenewalRec
     cardOwner: row.card_owner ?? null,
     activationPin: row.pin ?? null,
     activationTransaction: row.transaction ?? null,
+  };
+}
+
+/** يدمج بيانات الدين من استجابة POST /api/activate في وصل التفعيل */
+export function applyActivateDebtToRenewalReceipt(
+  receipt: RenewalReceipt,
+  res: ActivateSubscriberResponse,
+  opts?: { packagePrice?: number | null; amountPaid?: number | null }
+): RenewalReceipt {
+  const debtRemaining = getActivateDebtRemaining(res);
+  if (debtRemaining <= 0 && !res.debt_created) return receipt;
+
+  const packagePrice =
+    res.package_price ?? opts?.packagePrice ?? receipt.finalPrice ?? receipt.newProfileSalePrice ?? 0;
+  const amountPaid =
+    res.amount_paid ?? opts?.amountPaid ?? receipt.amountPaid ?? packagePrice;
+
+  return {
+    ...receipt,
+    finalPrice: packagePrice,
+    amountPaid,
+    remainingAmount: debtRemaining,
+    paymentStatus: debtRemaining > 0 ? PaymentStatus.Unpaid : PaymentStatus.Paid,
   };
 }
 
