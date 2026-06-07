@@ -733,6 +733,13 @@ const SubscribersPage: React.FC = () => {
     selectedSubscriberForRenewal ?? subscribers?.find((s) => s.id === renewalData.subscriberId) ?? null;
   const renewalResellerIdForQuery = (selectedSubscriber?.agentResellerId ?? '').trim() || undefined;
   const activateUsername = (selectedSubscriber?.username ?? '').trim();
+  const activateSubscriberName = useMemo(() => {
+    const sub = selectedSubscriber;
+    if (!sub) return '';
+    const full = (sub.fullName ?? '').trim();
+    if (full) return full;
+    return [(sub.firstName ?? '').trim(), (sub.lastName ?? '').trim()].filter(Boolean).join(' ');
+  }, [selectedSubscriber]);
   const pythonActivateResellerId = activateModalResellerId.trim();
 
   const {
@@ -4323,21 +4330,40 @@ const SubscribersPage: React.FC = () => {
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200/90 dark:border-gray-700 w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
             <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-l from-primary-50/90 via-white to-white dark:from-primary-950/40 dark:via-gray-800 dark:to-gray-800 shrink-0">
               <div className="min-w-0">
-                <div className="flex items-center gap-2 min-w-0">
-                  <h2
-                    className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white tracking-tight truncate"
-                    title={
-                      isPythonBackend()
-                        ? activateUsername || undefined
-                        : (renewalInfo?.subscriberName || selectedSubscriberForRenewal?.fullName || '').trim() ||
-                          undefined
-                    }
-                  >
-                    {isPythonBackend()
-                      ? activateUsername || selectedSubscriber?.fullName || 'تفعيل'
-                      : (renewalInfo?.subscriberName || selectedSubscriberForRenewal?.fullName || '').trim() ||
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                  {isPythonBackend() ? (
+                    <>
+                      <h2
+                        className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white tracking-tight truncate"
+                        title={
+                          activateSubscriberName && activateUsername
+                            ? `${activateSubscriberName} — ${activateUsername}`
+                            : activateSubscriberName || activateUsername || undefined
+                        }
+                      >
+                        {activateSubscriberName || 'تفعيل'}
+                      </h2>
+                      {activateUsername ? (
+                        <span
+                          className="shrink-0 text-sm sm:text-base font-semibold text-primary-700 dark:text-primary-300 tabular-nums"
+                          dir="ltr"
+                        >
+                          {activateUsername}
+                        </span>
+                      ) : null}
+                    </>
+                  ) : (
+                    <h2
+                      className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white tracking-tight truncate"
+                      title={
+                        (renewalInfo?.subscriberName || selectedSubscriberForRenewal?.fullName || '').trim() ||
+                        undefined
+                      }
+                    >
+                      {(renewalInfo?.subscriberName || selectedSubscriberForRenewal?.fullName || '').trim() ||
                         'تفعيل المشترك'}
-                  </h2>
+                    </h2>
+                  )}
                   {isPythonBackend() && (
                     <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400 tabular-nums">
                       {pythonActivateStep}/2
