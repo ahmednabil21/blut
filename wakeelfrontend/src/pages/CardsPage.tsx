@@ -127,6 +127,8 @@ const CardsPage: React.FC = () => {
     queryKey: ['cardSeries', selectedResellerId, seriesPage, seriesPerPage],
     queryFn: () => apiService.getCardSeries({ page: seriesPage, perPage: seriesPerPage }),
     enabled: hasReseller,
+    refetchInterval: hasReseller ? 10_000 : false,
+    refetchIntervalInBackground: false,
   });
 
   const seriesSyncMutation = useMutation({

@@ -19,6 +19,8 @@ export interface PythonActivateWizardProps {
   onBack: () => void;
   formatNumber: FormatNumberFn;
   showError: (err: unknown) => string;
+  /** قفل التفاعل أثناء تنفيذ POST /api/activate */
+  isActivating?: boolean;
 }
 
 export function PythonActivateWizard({
@@ -35,6 +37,7 @@ export function PythonActivateWizard({
   onBack,
   formatNumber,
   showError,
+  isActivating = false,
 }: PythonActivateWizardProps) {
   if (step === 1) {
     if (packagesLoading) {
@@ -49,7 +52,9 @@ export function PythonActivateWizard({
     }
 
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <div
+        className={`grid grid-cols-1 sm:grid-cols-2 gap-2 ${isActivating ? 'pointer-events-none opacity-60' : ''}`}
+      >
         {packages.map((pkg) => {
           const activatable = packageIsActivatable(pkg);
           const available = packageAvailableCount(pkg);
@@ -58,8 +63,8 @@ export function PythonActivateWizard({
             <button
               key={pkg.package_key}
               type="button"
-              onClick={() => activatable && onSelectPackage(pkg.package_key)}
-              disabled={!activatable}
+              onClick={() => activatable && !isActivating && onSelectPackage(pkg.package_key)}
+              disabled={!activatable || isActivating}
               className={`flex items-center justify-between gap-2 rounded-xl border px-4 py-3 text-start transition-colors ${
                 selected
                   ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40'
@@ -89,11 +94,17 @@ export function PythonActivateWizard({
   const remaining = Math.max(0, price - (Number(amountPaid) || 0));
 
   return (
-    <div className="space-y-4 max-w-md mx-auto">
+    <div className={`space-y-4 max-w-md mx-auto relative ${isActivating ? 'pointer-events-none' : ''}`}>
+      {isActivating && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/50 dark:bg-gray-900/50">
+          <RefreshCw className="h-8 w-8 animate-spin text-emerald-600" />
+        </div>
+      )}
       <button
         type="button"
         onClick={onBack}
-        className="text-sm text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
+        disabled={isActivating}
+        className="text-sm text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         ← الباقات
       </button>
@@ -123,7 +134,8 @@ export function PythonActivateWizard({
           max={price}
           value={amountPaid === 0 ? '' : amountPaid}
           onChange={(e) => onAmountPaidChange(Number(e.target.value) || 0)}
-          className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
+          disabled={isActivating}
+          className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed"
         />
       </div>
 

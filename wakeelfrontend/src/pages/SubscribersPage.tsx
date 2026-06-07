@@ -474,6 +474,9 @@ const SubscribersPage: React.FC = () => {
   const [pythonActivateStep, setPythonActivateStep] = useState<1 | 2>(1);
   /** رسيلر مثبّت عند فتح مودال التفعيل (X-Reseller-Id + select) */
   const [activateModalResellerId, setActivateModalResellerId] = useState('');
+  /** جاهزية POST /resellers/{id}/select قبل جلب الباقات */
+  const [activateResellerReady, setActivateResellerReady] = useState(false);
+  const activateResellerSelectRef = useRef<Promise<void> | null>(null);
   /** مودال التفعيل — واصل: المبلغ كاملاً (افتراضي) */
   const [amountReceivedInFull, setAmountReceivedInFull] = useState(true);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
@@ -755,8 +758,21 @@ const SubscribersPage: React.FC = () => {
         fromSas: true,
       }),
     enabled:
-      showRenewalModal && isPythonBackend() && !!pythonActivateResellerId && !!activateUsername,
+      showRenewalModal &&
+      isPythonBackend() &&
+      !!pythonActivateResellerId &&
+      !!activateUsername &&
+      activateResellerReady,
     retry: false,
+    refetchInterval:
+      showRenewalModal &&
+      isPythonBackend() &&
+      !!pythonActivateResellerId &&
+      !!activateUsername &&
+      activateResellerReady
+        ? 10_000
+        : false,
+    refetchIntervalInBackground: false,
   });
 
   const activatePackagesList = useMemo(
@@ -1847,11 +1863,32 @@ const SubscribersPage: React.FC = () => {
     setActivateSelectedPackageKey('');
     setPythonActivateStep(1);
     setActivateModalResellerId('');
+    setActivateResellerReady(false);
+    activateResellerSelectRef.current = null;
     setAmountReceivedInFull(true);
     clearSubscriberSelection();
   };
 
-  const openPythonActivateModal = async (subscriber: Subscriber, resellerId?: string) => {
+  const ensureActivateResellerSelected = useCallback((rid: string) => {
+    setSelectedResellerId(rid);
+    if (activateResellerSelectRef.current) {
+      return activateResellerSelectRef.current;
+    }
+    setActivateResellerReady(false);
+    const promise = apiService
+      .selectApiReseller(rid)
+      .catch(() => undefined)
+      .then(() => {
+        setActivateResellerReady(true);
+      })
+      .finally(() => {
+        activateResellerSelectRef.current = null;
+      });
+    activateResellerSelectRef.current = promise;
+    return promise;
+  }, []);
+
+  const openPythonActivateModal = (subscriber: Subscriber, resellerId?: string) => {
     const rid = resolveSubscriberActivateResellerId(subscriber, {
       explicitResellerId: resellerId,
       operationalResellerId: selectedOperationalResellerId,
@@ -1869,6 +1906,7 @@ const SubscribersPage: React.FC = () => {
     setActivateSelectedPackageKey('');
     setPythonActivateStep(1);
     setActivateModalResellerId(rid);
+    setActivateResellerReady(false);
     setAmountReceivedInFull(true);
     setRenewalData((prev) => ({
       ...prev,
@@ -1879,13 +1917,8 @@ const SubscribersPage: React.FC = () => {
       debtDueDate: '',
     }));
 
-    setSelectedResellerId(rid);
-    try {
-      await apiService.selectApiReseller(rid);
-    } catch {
-      /* يبقى X-Reseller-Id من التخزين */
-    }
     setShowRenewalModal(true);
+    void ensureActivateResellerSelected(rid);
     void queryClient.invalidateQueries({ queryKey: ['activate-modes', rid] });
     void queryClient.invalidateQueries({ queryKey: ['activate-packages'] });
   };
@@ -1960,6 +1993,9 @@ const SubscribersPage: React.FC = () => {
 
   const pythonActivateMutation = useMutation({
     mutationFn: async () => {
+      if (pythonActivateResellerId) {
+        await ensureActivateResellerSelected(pythonActivateResellerId);
+      }
       const username = activateUsername;
       if (!username) throw new Error('اسم المستخدم غير متوفر');
       if (!activateSelectedPackageKey.trim()) throw new Error('اختر الباقة');
@@ -2057,6 +2093,8 @@ const SubscribersPage: React.FC = () => {
       showError('فشل التفعيل', msg);
     },
   });
+
+  const pythonActivateBusy = pythonActivateMutation.isPending;
 
   const otherDealerTopUpMutation = useMutation({
     mutationFn: (body: BalanceTopUpRequest) => apiService.postBalanceTopUp(body),
@@ -2445,6 +2483,7 @@ const SubscribersPage: React.FC = () => {
   };
 
   const handlePythonActivateSubmit = async () => {
+    if (pythonActivateBusy) return;
     if (!pythonActivateResellerId) {
       showError('الرسيلر', 'المشترك غير مربوط برسيلر — لا يمكن التفعيل.');
       return;
@@ -4378,8 +4417,12 @@ const SubscribersPage: React.FC = () => {
               </div>
               <button
                 type="button"
-                onClick={closeRenewalModal}
-                className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0"
+                onClick={() => {
+                  if (isPythonBackend() && pythonActivateBusy) return;
+                  closeRenewalModal();
+                }}
+                disabled={isPythonBackend() && pythonActivateBusy}
+                className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
               </button>
@@ -4421,7 +4464,7 @@ const SubscribersPage: React.FC = () => {
                     <PythonActivateWizard
                       step={pythonActivateStep}
                       packages={activatePackagesList}
-                      packagesLoading={activatePackagesLoading}
+                      packagesLoading={activatePackagesLoading || !activateResellerReady}
                       packagesError={activatePackagesError}
                       selectedPackageKey={activateSelectedPackageKey}
                       selectedPackage={selectedActivatePackage}
@@ -4429,9 +4472,12 @@ const SubscribersPage: React.FC = () => {
                       amountPaid={renewalData.amountPaid ?? 0}
                       onSelectPackage={handlePythonSelectPackage}
                       onAmountPaidChange={handlePythonAmountPaidChange}
-                      onBack={() => setPythonActivateStep(1)}
+                      onBack={() => {
+                        if (!pythonActivateBusy) setPythonActivateStep(1);
+                      }}
                       formatNumber={formatNumber}
                       showError={(err) => ApiService.showError(err)}
+                      isActivating={pythonActivateBusy}
                     />
                   )}
 
@@ -4806,8 +4852,12 @@ const SubscribersPage: React.FC = () => {
                 <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/90 dark:bg-gray-900/40 shrink-0">
                   <button
                     type="button"
-                    onClick={closeRenewalModal}
-                    className="w-full sm:w-auto px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    onClick={() => {
+                      if (isPythonBackend() && pythonActivateBusy) return;
+                      closeRenewalModal();
+                    }}
+                    disabled={isPythonBackend() && pythonActivateBusy}
+                    className="w-full sm:w-auto px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     إلغاء
                   </button>
@@ -4816,7 +4866,7 @@ const SubscribersPage: React.FC = () => {
                       type="submit"
                       disabled={
                         isPythonBackend()
-                          ? pythonActivateMutation.isPending ||
+                          ? pythonActivateBusy ||
                             !selectedPackageActivatable ||
                             !activateSelectedPackageKey.trim() ||
                             pythonPackagePrice == null
@@ -4825,7 +4875,7 @@ const SubscribersPage: React.FC = () => {
                       className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed min-w-[140px]"
                     >
                       {(isPythonBackend()
-                        ? pythonActivateMutation.isPending
+                        ? pythonActivateBusy
                         : createRenewalMutation.isPending) ? (
                         <>
                           <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
