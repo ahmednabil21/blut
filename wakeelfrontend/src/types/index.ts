@@ -3435,6 +3435,8 @@ export interface DebtsListParams extends Omit<PaginationParams, 'status'> {
   paymentCreatedAtTo?: string;
   /** فلترة ديون مشتركي منطقة معيّنة (نفس مفتاح المشتركين) */
   resellerId?: string;
+  /** متأخر + غير مدفوع — يرسل كـ overdueOnly أو يستخدم GET /Debts/overdue-unpaid */
+  overdueOnly?: boolean;
 }
 
 // --- مصاريف المكتب (Office Expenses) ---

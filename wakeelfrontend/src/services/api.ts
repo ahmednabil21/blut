@@ -73,6 +73,7 @@ import {
   PaymentStatus,
   SubscriptionType,
   Debt,
+  DebtStatus,
   DebtsListResponse,
   DebtCreateRequest,
   DebtUpdateRequest,
@@ -3388,46 +3389,25 @@ class ApiService {
     if (params?.paymentCreatedAtTo?.trim()) queryParams.paymentCreatedAtTo = params.paymentCreatedAtTo.trim();
     if (params?.debtDescription?.trim()) queryParams.DebtDescription = params.debtDescription.trim();
     if (params?.resellerId?.trim()) queryParams.resellerId = params.resellerId.trim();
+    if (params?.overdueOnly === true) queryParams.overdueOnly = true;
     return queryParams;
   }
 
-  /** بعض المسارات في الباكند تعمل بدون بادئة /api */
-  private getNoApiBaseURL(): string {
-    const base = String(this.api.defaults.baseURL ?? getApiBaseUrl()).trim();
-    return base.replace(/\/api\/?$/i, '');
+  private mapDebtRow(debt: Record<string, unknown> | Debt): Debt {
+    const row = debt as Record<string, unknown>;
+    const status = Number(row.status ?? 0);
+    return {
+      ...(debt as Debt),
+      isPaid: status === DebtStatus.Paid,
+      agentId: String(row.agentId ?? ''),
+      agentName: String(row.agentCompanyName ?? row.agentName ?? 'غير محدد'),
+      paidDate: (row.paidDate ?? row.paymentCreatedAt ?? undefined) as string | undefined,
+      status: status as DebtStatus,
+    };
   }
 
-  private debtsGet<T = unknown>(url: string, params?: Record<string, unknown>): Promise<AxiosResponse<T>> {
-    return this.api.get<T>(url, { baseURL: this.getNoApiBaseURL(), params });
-  }
-
-  private debtsPost<T = unknown>(url: string, data?: unknown): Promise<AxiosResponse<T>> {
-    return this.api.post<T>(url, data, { baseURL: this.getNoApiBaseURL() });
-  }
-
-  private debtsPut<T = unknown>(url: string, data?: unknown): Promise<AxiosResponse<T>> {
-    return this.api.put<T>(url, data, { baseURL: this.getNoApiBaseURL() });
-  }
-
-  private debtsDelete(url: string): Promise<AxiosResponse<void>> {
-    return this.api.delete<void>(url, { baseURL: this.getNoApiBaseURL() });
-  }
-
-  // Debt Management — يدعم فلترة: searchTerm, sortBy, sortDescending, DebtStatus, DebtDescription, DueDateFrom, DueDateTo, إلخ
-  async getAllDebts(params?: DebtsListParams): Promise<DebtsListResponse> {
-    const queryParams = this.buildDebtsQueryParams(params);
-    const response = await this.debtsGet<DebtsListResponse & { data: any[] }>('/Debts', queryParams);
-    const raw = response.data as DebtsListResponse & { data: any[] };
-
-    const transformedData = (raw.data || []).map((debt: any) => ({
-      ...debt,
-      isPaid: debt.status === 1,
-      agentId: debt.agentId || '',
-      agentName: debt.agentCompanyName || 'غير محدد',
-      paidDate: undefined,
-      status: debt.status ?? 0,
-    }));
-
+  private mapDebtsListResponse(raw: DebtsListResponse & { data?: Array<Record<string, unknown> | Debt> }): DebtsListResponse {
+    const transformedData = (raw.data || []).map((debt) => this.mapDebtRow(debt));
     return {
       ...raw,
       data: transformedData,
@@ -3435,59 +3415,80 @@ class ApiService {
     };
   }
 
+  /** بعض المسارات في الباكند القديم تعمل بدون بادئة /api */
+  private getNoApiBaseURL(): string {
+    const base = String(this.api.defaults.baseURL ?? getApiBaseUrl()).trim();
+    return base.replace(/\/api\/?$/i, '');
+  }
+
+  private debtsGet<T = unknown>(url: string, params?: Record<string, unknown>): Promise<AxiosResponse<T>> {
+    return this.api.get<T>(url, { params });
+  }
+
+  private debtsPost<T = unknown>(url: string, data?: unknown): Promise<AxiosResponse<T>> {
+    return this.api.post<T>(url, data);
+  }
+
+  private debtsPut<T = unknown>(url: string, data?: unknown): Promise<AxiosResponse<T>> {
+    return this.api.put<T>(url, data);
+  }
+
+  private debtsDelete(url: string): Promise<AxiosResponse<void>> {
+    return this.api.delete<void>(url);
+  }
+
+  // Debt Management — GET /api/Debts (+ فلاتر DebtStatus, DebtDescription, overdueOnly, …)
+  async getAllDebts(params?: DebtsListParams): Promise<DebtsListResponse> {
+    const queryParams = this.buildDebtsQueryParams(params);
+    const response = await this.debtsGet<DebtsListResponse & { data: Record<string, unknown>[] }>(
+      '/Debts',
+      queryParams
+    );
+    return this.mapDebtsListResponse(response.data);
+  }
+
+  /** GET /api/Debts/overdue-unpaid — ديون متأخرة وغير مسددة */
+  async getOverdueUnpaidDebts(params?: DebtsListParams): Promise<DebtsListResponse> {
+    const queryParams = this.buildDebtsQueryParams(params);
+    const response = await this.debtsGet<DebtsListResponse & { data: Record<string, unknown>[] }>(
+      '/Debts/overdue-unpaid',
+      queryParams
+    );
+    return this.mapDebtsListResponse(response.data);
+  }
+
   async getSubscriberDebts(subscriberId: string, params?: PaginationParams): Promise<PaginatedResponse<Debt>> {
-    const response = await this.debtsGet<PaginatedResponse<Debt>>(`/Debts/subscriber/${subscriberId}`, params as Record<string, unknown> | undefined);
-    const transformedData = (response.data?.data || []).map((debt: any) => ({
-      ...debt,
-      isPaid: debt.status === 1,
-      agentId: debt.agentId || '',
-      agentName: debt.agentCompanyName || debt.agentName || 'غير محدد',
-      paidDate: debt.paymentCreatedAt ?? debt.paidDate ?? undefined,
-      status: debt.status || 0,
-    }));
+    const response = await this.debtsGet<PaginatedResponse<Record<string, unknown>>>(
+      `/Debts/subscriber/${subscriberId}`,
+      params as Record<string, unknown> | undefined
+    );
+    const transformedData = (response.data?.data || []).map((debt) => this.mapDebtRow(debt));
     return { ...response.data, data: transformedData };
   }
 
   async getDebt(id: string): Promise<Debt> {
-    const response = await this.debtsGet<Debt>(`/Debts/${id}`);
-    return {
-      ...response.data,
-      isPaid: response.data.status === 1,
-      paidDate: response.data.paymentCreatedAt ?? response.data.paidDate ?? undefined,
-      status: response.data.status || 0
-    };
+    const response = await this.debtsGet<Record<string, unknown>>(`/Debts/${id}`);
+    return this.mapDebtRow(response.data);
   }
 
   async createDebt(debtData: DebtCreateRequest): Promise<Debt> {
-    const response = await this.debtsPost<Debt>('/Debts', debtData);
-    return {
-      ...response.data,
-      isPaid: response.data.status === 1,
-      paidDate: response.data.paymentCreatedAt ?? response.data.paidDate ?? undefined,
-      status: response.data.status || 0
+    const subscriberId = Number(debtData.subscriberId);
+    const payload = {
+      ...debtData,
+      subscriberId: Number.isFinite(subscriberId) ? subscriberId : debtData.subscriberId,
     };
+    const response = await this.debtsPost<Record<string, unknown>>('/Debts', payload);
+    return this.mapDebtRow(response.data);
   }
 
   async updateDebt(id: string, debtData: DebtUpdateRequest): Promise<Debt> {
-    const response = await this.debtsPut<Debt>(`/Debts/${id}`, debtData);
-    return {
-      ...response.data,
-      isPaid: response.data.status === 1,
-      paidDate: response.data.paymentCreatedAt ?? response.data.paidDate ?? undefined,
-      status: response.data.status || 0
-    };
+    const response = await this.debtsPut<Record<string, unknown>>(`/Debts/${id}`, debtData);
+    return this.mapDebtRow(response.data);
   }
 
   async payDebt(id: string, paymentData: DebtPaymentRequest): Promise<Debt> {
-    console.log('API: payDebt called with:', { id, paymentData });
-    const response = await this.debtsPost<Debt>(`/Debts/${id}/pay`, paymentData);
-    console.log('API: payDebt response:', response.data);
-    return {
-      ...response.data,
-      isPaid: response.data.status === 1,
-      paidDate: response.data.paymentCreatedAt ?? response.data.paidDate ?? undefined,
-      status: response.data.status || 0
-    };
+    const response = await this.debtsPost<Record<string, unknown>>(`/Debts/${id}/pay`, paymentData);
+    return this.mapDebtRow(response.data);
   }
 
   async deleteDebt(id: string): Promise<void> {
@@ -3495,8 +3496,13 @@ class ApiService {
   }
 
   async getSubscriberDebtTotal(subscriberId: string): Promise<number> {
-    const response = await this.debtsGet<number>(`/Debts/subscriber/${subscriberId}/total`);
-    return Number(response.data ?? 0) || 0;
+    const response = await this.debtsGet<number | { total?: number }>(
+      `/Debts/subscriber/${subscriberId}/total`
+    );
+    const raw = response.data;
+    if (typeof raw === 'number') return raw;
+    if (raw && typeof raw === 'object' && raw.total != null) return Number(raw.total) || 0;
+    return Number(raw ?? 0) || 0;
   }
 
   /** تحديث حالة إطفاء/تشغيل لجميع ديون المشترك (0 = إطفاء، 1 = تشغيل) */

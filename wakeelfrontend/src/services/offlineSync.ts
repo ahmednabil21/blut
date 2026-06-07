@@ -530,7 +530,7 @@ export async function fetchDebtsWithCache(
     if (!online) return empty();
     try {
       return useOverdue
-        ? await apiService.getAllDebts({ ...params, status: DebtStatus.Unpaid, maxDaysUntilExpiry: 0 })
+        ? await apiService.getOverdueUnpaidDebts(params)
         : await apiService.getAllDebts(params);
     } catch {
       return empty();
@@ -554,7 +554,9 @@ export async function fetchDebtsWithCache(
   if (online) {
     try {
       const res = useOverdue
-        ? await apiService.getAllDebts({ ...params, status: DebtStatus.Unpaid, maxDaysUntilExpiry: 0 })
+        ? isPythonBackend()
+          ? await apiService.getOverdueUnpaidDebts(params)
+          : await apiService.getAllDebts({ ...params, status: DebtStatus.Unpaid, maxDaysUntilExpiry: 0 })
         : await apiService.getAllDebts(params);
       if (res?.data?.length) await cacheDebts(res.data);
       return res;
