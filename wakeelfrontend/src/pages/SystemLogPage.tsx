@@ -60,7 +60,10 @@ const SystemLogPage: React.FC = () => {
   const { user, isAuthenticated } = useAuth();
   const { formatDate } = useDigits();
   const pythonBackend = isPythonBackend();
-  const isAdmin = user?.role === UserRole.Admin;
+  const isDotNetAdmin = user?.role === UserRole.Admin;
+  /** Python: agent_admin يُعرَض كـ Agent — يحتاج اختيار ريسيلر لسجل النظام */
+  const canSelectResellerForLog =
+    isDotNetAdmin || (pythonBackend && user?.role === UserRole.Agent);
 
   const [selectedAgentId, setSelectedAgentId] = useState('');
   const [page, setPage] = useState(1);
@@ -78,7 +81,7 @@ const SystemLogPage: React.FC = () => {
   const { data: agentsResponse } = useQuery({
     queryKey: ['allAgents', 'system-log'],
     queryFn: () => apiService.getAllAgents({ page: 1, pageSize: 5000 }),
-    enabled: isAuthenticated && isAdmin && !pythonBackend,
+    enabled: isAuthenticated && isDotNetAdmin && !pythonBackend,
     retry: false,
   });
   const adminAgents = (agentsResponse?.data ?? []) as Agent[];
@@ -86,7 +89,7 @@ const SystemLogPage: React.FC = () => {
   const { data: pythonResellers = [] } = useQuery({
     queryKey: ['api-resellers', 'system-log'],
     queryFn: () => apiService.getApiResellers(),
-    enabled: isAuthenticated && isAdmin && pythonBackend,
+    enabled: isAuthenticated && canSelectResellerForLog && pythonBackend,
     retry: false,
   });
 
@@ -104,14 +107,14 @@ const SystemLogPage: React.FC = () => {
   }, [activityTypesFromApi]);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canSelectResellerForLog) return;
     if (pythonBackend) {
       if (!pythonResellers.length) return;
       const saved = localStorage.getItem(ACTIVITY_LOG_AGENT_STORAGE_KEY);
-      if (saved && pythonResellers.some((r) => String(r.id) === saved)) {
-        setSelectedAgentId(saved);
+      if (saved === 'all' || (saved && pythonResellers.some((r) => String(r.id) === saved))) {
+        setSelectedAgentId(saved || 'all');
       } else {
-        setSelectedAgentId(String(pythonResellers[0].id));
+        setSelectedAgentId('all');
       }
       return;
     }
@@ -122,12 +125,12 @@ const SystemLogPage: React.FC = () => {
     } else {
       setSelectedAgentId(adminAgents[0].id);
     }
-  }, [isAdmin, pythonBackend, pythonResellers.length, adminAgents.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [canSelectResellerForLog, pythonBackend, pythonResellers.length, adminAgents.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!isAdmin || !selectedAgentId) return;
+    if (!canSelectResellerForLog || !selectedAgentId) return;
     localStorage.setItem(ACTIVITY_LOG_AGENT_STORAGE_KEY, selectedAgentId);
-  }, [isAdmin, selectedAgentId]);
+  }, [canSelectResellerForLog, selectedAgentId]);
 
   const activityTypeParam = useMemo((): ActivityType | undefined => {
     if (appliedActivityType === '') return undefined;
@@ -136,11 +139,11 @@ const SystemLogPage: React.FC = () => {
   }, [appliedActivityType]);
 
   const listEnabled =
-    isAuthenticated && (!isAdmin || !!selectedAgentId);
+    isAuthenticated && (!canSelectResellerForLog || !!selectedAgentId);
 
   const activityQueryKey = [
     'activity-log',
-    isAdmin ? selectedAgentId : 'me',
+    canSelectResellerForLog ? selectedAgentId : 'me',
     page,
     PAGE_SIZE,
     activityTypeParam ?? null,
@@ -161,7 +164,7 @@ const SystemLogPage: React.FC = () => {
       apiService.getActivityLog({
         page,
         pageSize: PAGE_SIZE,
-        agentId: isAdmin ? selectedAgentId : undefined,
+        agentId: canSelectResellerForLog ? selectedAgentId : undefined,
         activityType: activityTypeParam,
         subscriberName: appliedSubscriberName.trim() || undefined,
         fromDate: appliedFromDate || undefined,
@@ -238,7 +241,7 @@ const SystemLogPage: React.FC = () => {
           الفلاتر
         </div>
 
-        {isAdmin && (
+        {canSelectResellerForLog && (
           <div>
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
               {pythonBackend ? 'الريسيلر' : 'الوكيل'}
@@ -251,6 +254,9 @@ const SystemLogPage: React.FC = () => {
               }}
               className="w-full sm:max-w-md rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-white"
             >
+              {pythonBackend && (
+                <option value="all">جميع الريسيلرز</option>
+              )}
               {pythonBackend
                 ? pythonResellers.map((r) => (
                     <option key={r.id} value={String(r.id)}>
@@ -265,7 +271,7 @@ const SystemLogPage: React.FC = () => {
             </select>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {pythonBackend
-                ? 'اختر الريسيلر لعرض سجل عملياته.'
+                ? 'اختر ريسيلراً أو «جميع الريسيلرز» لعرض السجل الكامل.'
                 : 'يجب اختيار وكيل لعرض السجل (مطلوب للمسؤول).'}
             </p>
           </div>

@@ -3058,13 +3058,27 @@ export interface CardCodesSyncResult {
   series: string;
   reseller_id: number;
   mode?: string;
+  unused_only?: boolean;
+  provider_type?: string;
+  sas_path?: string;
+  page_from?: number;
+  page_to?: number;
   pages_synced: number;
   rows_fetched: number;
   created: number;
   updated: number;
   skipped?: number;
   total_codes_in_db: number;
+  unused_in_db?: number;
   synced_at: string;
+}
+
+/** POST /api/cards/sync ثم POST /api/cards/{series}/codes/sync لكل سلسلة — قبل التفعيل */
+export interface ActivationCardInventorySyncResult {
+  series: CardSeriesSyncResult | null;
+  codes: CardCodesSyncResult[];
+  series_synced: number;
+  codes_synced: number;
 }
 
 /** GET /api/cards/{series}/codes/next-unused */

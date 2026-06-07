@@ -40,6 +40,7 @@ import {
   CardCode,
   CardSeriesSyncResult,
   CardCodesSyncResult,
+  ActivationCardInventorySyncResult,
   CardNextUnusedResponse,
   ActivateAvailableCodesResponse,
   ActivateSeriesResponse,
@@ -2284,6 +2285,57 @@ class ApiService {
       },
     });
     return response.data;
+  }
+
+  /**
+   * مزامنة سلاسل الكروت ثم أكواد كل سلسلة من SAS إلى DB.
+   * يُستدعى قبل فتح مودال التفعيل لتجنّب 403 عند جلب الباقات مباشرة من SAS.
+   */
+  async syncActivationCardInventory(): Promise<ActivationCardInventorySyncResult> {
+    let series: CardSeriesSyncResult | null = null;
+    try {
+      series = await this.syncCardSeries();
+    } catch {
+      /* قد تكون السلاسل موجودة مسبقاً — نتابع مزامنة الأكواد */
+    }
+
+    const allSeries: string[] = [];
+    let page = 1;
+    let totalPages = 1;
+    const perPage = 100;
+
+    while (page <= totalPages) {
+      try {
+        const res = await this.getCardSeries({ page, perPage });
+        totalPages = Math.max(1, res.totalPages ?? 1);
+        for (const row of res.data ?? []) {
+          const s = String(row.series ?? '').trim();
+          if (s) allSeries.push(s);
+        }
+        page += 1;
+      } catch {
+        break;
+      }
+    }
+
+    const codes: CardCodesSyncResult[] = [];
+    const batchSize = 4;
+    for (let i = 0; i < allSeries.length; i += batchSize) {
+      const batch = allSeries.slice(i, i + batchSize);
+      const results = await Promise.allSettled(
+        batch.map((s) => this.syncCardCodes(s, { unusedOnly: true, full: false }))
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled') codes.push(r.value);
+      }
+    }
+
+    return {
+      series,
+      codes,
+      series_synced: allSeries.length,
+      codes_synced: codes.length,
+    };
   }
 
   /** GET /api/cards/{series}/codes */

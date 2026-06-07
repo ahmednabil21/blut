@@ -66,7 +66,7 @@ import {
   statusBadgeClassFromDays,
   statusLabelFromDaysRemaining,
 } from '../utils/subscriberExpiry';
-import { Subscriber, SubscriptionStatus, SubscriptionType, SubscriberCreateRequest, Profile, RenewalData, RenewalActivationMode, PaymentStatus, PaginatedResponse, PaginationParams, UserRole, ServiceType, SubscriberNoteType, EARTHLINK_USER_MANAGEMENT_URL, AgentReseller, ProfilePackageType, formatServiceTypeLabelAr, SUBSCRIBER_FETCH_LIMIT_PRESETS, type CashbackSynchronizationFtthResponse, type CashbackSynchronizationFtthRow, type ZainfiSubscriberDiffResponse, type ZainfiSubscriberDiffItem, type ZainfiApplyExternalExpirationRequest, type ActivationInvoicePrintSettingsDto, type BalanceTopUpRequest, type Dealer, type SubscriberNoteTypeOption, User, type RenewalReceipt, type ActivateSubscriberResponse, type ActivatePackageItem, type CardSeriesSyncResult } from '../types';
+import { Subscriber, SubscriptionStatus, SubscriptionType, SubscriberCreateRequest, Profile, RenewalData, RenewalActivationMode, PaymentStatus, PaginatedResponse, PaginationParams, UserRole, ServiceType, SubscriberNoteType, EARTHLINK_USER_MANAGEMENT_URL, AgentReseller, ProfilePackageType, formatServiceTypeLabelAr, SUBSCRIBER_FETCH_LIMIT_PRESETS, type CashbackSynchronizationFtthResponse, type CashbackSynchronizationFtthRow, type ZainfiSubscriberDiffResponse, type ZainfiSubscriberDiffItem, type ZainfiApplyExternalExpirationRequest, type ActivationInvoicePrintSettingsDto, type BalanceTopUpRequest, type Dealer, type SubscriberNoteTypeOption, User, type RenewalReceipt, type ActivateSubscriberResponse, type ActivatePackageItem, type ActivationCardInventorySyncResult } from '../types';
 import {
   buildActivationReceiptPrintHtml,
   embedActivationReceiptStaticImages,
@@ -502,25 +502,28 @@ const SubscribersPage: React.FC = () => {
   const renewalGeneralNotesTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const columnSettingsRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
-  /** مزامنة سلاسل الكروت — يُشارك بين فتح المودال (خلفية) والتفعيل الفعلي */
-  const cardSeriesSyncPromiseRef = useRef<Promise<CardSeriesSyncResult | null> | null>(null);
+  /** مزامنة سلاسل وأكواد الكروت من SAS — يُشارك بين فتح المودال والتفعيل الفعلي */
+  const activationCardSyncPromiseRef = useRef<Promise<ActivationCardInventorySyncResult | null> | null>(
+    null
+  );
 
-  const triggerCardSeriesSync = useCallback((): Promise<CardSeriesSyncResult | null> => {
-    if (cardSeriesSyncPromiseRef.current) {
-      return cardSeriesSyncPromiseRef.current;
+  const triggerActivationCardSync = useCallback((): Promise<ActivationCardInventorySyncResult | null> => {
+    if (activationCardSyncPromiseRef.current) {
+      return activationCardSyncPromiseRef.current;
     }
     const promise = apiService
-      .syncCardSeries()
+      .syncActivationCardInventory()
       .then((res) => {
         void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
+        void queryClient.invalidateQueries({ queryKey: ['cardCodes'] });
         void queryClient.invalidateQueries({ queryKey: ['activate-packages'] });
         return res;
       })
       .catch(() => null)
       .finally(() => {
-        cardSeriesSyncPromiseRef.current = null;
+        activationCardSyncPromiseRef.current = null;
       });
-    cardSeriesSyncPromiseRef.current = promise;
+    activationCardSyncPromiseRef.current = promise;
     return promise;
   }, [queryClient]);
 
@@ -762,11 +765,14 @@ const SubscribersPage: React.FC = () => {
     error: activatePackagesError,
   } = useQuery({
     queryKey: ['activate-packages', pythonActivateResellerId, activateUsername],
-    queryFn: () =>
-      apiService.getActivatePackages({
+    queryFn: async () => {
+      await triggerActivationCardSync();
+      return apiService.getActivatePackages({
         username: activateUsername,
         live: false,
-      }),
+        fromSas: false,
+      });
+    },
     enabled:
       showRenewalModal && isPythonBackend() && !!pythonActivateResellerId && !!activateUsername,
     retry: false,
@@ -1901,7 +1907,7 @@ const SubscribersPage: React.FC = () => {
     setShowRenewalModal(true);
     void queryClient.invalidateQueries({ queryKey: ['activate-modes', rid] });
     void queryClient.invalidateQueries({ queryKey: ['activate-packages'] });
-    void triggerCardSeriesSync();
+    void triggerActivationCardSync();
   };
 
   const extendDayTargetSubscriber = useMemo(() => {
@@ -1981,7 +1987,7 @@ const SubscribersPage: React.FC = () => {
         activateSelectedPackageKey
       );
       const pkg = selectedActivatePackage;
-      await triggerCardSeriesSync();
+      await triggerActivationCardSync();
       const packagePrice = pythonPackagePrice!;
       const rawPaid = renewalData.amountPaid;
       const amountPaid =
