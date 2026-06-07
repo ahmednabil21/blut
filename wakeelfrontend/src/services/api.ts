@@ -40,11 +40,12 @@ import {
   CardCode,
   CardSeriesSyncResult,
   CardCodesSyncResult,
-  ActivationCardInventorySyncResult,
+  CardLatestFromSasResponse,
   CardNextUnusedResponse,
   ActivateAvailableCodesResponse,
   ActivateSeriesResponse,
   ActivatePackagesResponse,
+  ActivateLatestCardResponse,
   ActivateModesResponse,
   ActivateModesConfig,
   ActivateSubscriberRequest,
@@ -2287,54 +2288,24 @@ class ApiService {
     return response.data;
   }
 
-  /**
-   * مزامنة سلاسل الكروت ثم أكواد كل سلسلة من SAS إلى DB.
-   * يُستدعى قبل فتح مودال التفعيل لتجنّب 403 عند جلب الباقات مباشرة من SAS.
-   */
-  async syncActivationCardInventory(): Promise<ActivationCardInventorySyncResult> {
-    let series: CardSeriesSyncResult | null = null;
-    try {
-      series = await this.syncCardSeries();
-    } catch {
-      /* قد تكون السلاسل موجودة مسبقاً — نتابع مزامنة الأكواد */
-    }
-
-    const allSeries: string[] = [];
-    let page = 1;
-    let totalPages = 1;
-    const perPage = 100;
-
-    while (page <= totalPages) {
-      try {
-        const res = await this.getCardSeries({ page, perPage });
-        totalPages = Math.max(1, res.totalPages ?? 1);
-        for (const row of res.data ?? []) {
-          const s = String(row.series ?? '').trim();
-          if (s) allSeries.push(s);
-        }
-        page += 1;
-      } catch {
-        break;
-      }
-    }
-
-    const codes: CardCodesSyncResult[] = [];
-    const batchSize = 4;
-    for (let i = 0; i < allSeries.length; i += batchSize) {
-      const batch = allSeries.slice(i, i + batchSize);
-      const results = await Promise.allSettled(
-        batch.map((s) => this.syncCardCodes(s, { unusedOnly: true, full: false }))
-      );
-      for (const r of results) {
-        if (r.status === 'fulfilled') codes.push(r.value);
-      }
-    }
-
+  /** GET /api/cards/{series}/codes/latest-from-sas — أحدث PIN من SAS (سريع، بدون DB) */
+  async getCardCodesLatestFromSas(series: string): Promise<CardLatestFromSasResponse> {
+    const encoded = encodeURIComponent(series);
+    const response = await this.api.get<ActivateLatestCardResponse>(
+      `/cards/${encoded}/codes/latest-from-sas`,
+      { timeout: 45_000 }
+    );
+    const body = response.data ?? {};
     return {
-      series,
-      codes,
-      series_synced: allSeries.length,
-      codes_synced: codes.length,
+      series: String(body.series ?? series).trim(),
+      pin: String(body.pin ?? '').trim(),
+      serialnumber: body.serialnumber ?? null,
+      sas_code_id: body.sas_code_id != null ? Number(body.sas_code_id) : null,
+      created_at: body.created_at != null ? String(body.created_at) : null,
+      source: body.source != null ? String(body.source) : undefined,
+      sas_path: body.sas_path != null ? String(body.sas_path) : undefined,
+      profile_id: body.profile_id != null ? Number(body.profile_id) : null,
+      profile_name: body.profile_name != null ? String(body.profile_name) : null,
     };
   }
 
@@ -2455,6 +2426,43 @@ class ApiService {
           : typeof body.resellerName === 'string'
             ? body.resellerName
             : undefined,
+    };
+  }
+
+  /** GET /api/activate/latest-card — أحدث PIN متاح من SAS (سريع) */
+  async getActivateLatestCard(params?: {
+    profileId?: number | string;
+    profileName?: string;
+    series?: string;
+  }): Promise<ActivateLatestCardResponse> {
+    const pid =
+      params?.profileId != null && String(params.profileId).trim() !== ''
+        ? parseInt(String(params.profileId), 10)
+        : undefined;
+    const response = await this.api.get<ActivateLatestCardResponse>('/activate/latest-card', {
+      params: {
+        ...(params?.profileName?.trim() ? { profile_name: params.profileName.trim() } : {}),
+        ...(pid != null && Number.isFinite(pid) ? { profile_id: pid } : {}),
+        ...(params?.series?.trim() ? { series: params.series.trim() } : {}),
+      },
+      timeout: 45_000,
+    });
+    const body = response.data ?? {};
+    return {
+      series: String(body.series ?? '').trim(),
+      pin: String(body.pin ?? '').trim(),
+      serialnumber: body.serialnumber ?? null,
+      sas_code_id: body.sas_code_id != null ? Number(body.sas_code_id) : null,
+      created_at: body.created_at != null ? String(body.created_at) : null,
+      source: body.source != null ? String(body.source) : undefined,
+      sas_path: body.sas_path != null ? String(body.sas_path) : undefined,
+      profile_id: body.profile_id != null ? Number(body.profile_id) : null,
+      profile_name: body.profile_name != null ? String(body.profile_name) : null,
+      recommended_series:
+        body.recommended_series != null ? String(body.recommended_series) : undefined,
+      series_candidates: Array.isArray(body.series_candidates)
+        ? body.series_candidates.map((s) => String(s))
+        : undefined,
     };
   }
 

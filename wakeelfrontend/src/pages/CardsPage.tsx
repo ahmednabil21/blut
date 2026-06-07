@@ -166,14 +166,16 @@ const CardsPage: React.FC = () => {
   });
 
   const nextPinMutation = useMutation({
-    mutationFn: (series: string) => apiService.getNextUnusedCardCode(series, { sync: false }),
+    mutationFn: (series: string) => apiService.getCardCodesLatestFromSas(series),
     onSuccess: (res) => {
-      const pin = res.pins?.[0]?.pin;
+      const pin = res.pin?.trim();
       if (pin) {
         void navigator.clipboard.writeText(pin);
         setCopiedPin(pin);
         setTimeout(() => setCopiedPin(null), 2500);
         showSuccess('كود جاهز', `تم نسخ PIN: ${pin}`);
+      } else {
+        showError('جلب كود', 'لا يوجد PIN متاح على SAS لهذه السلسلة');
       }
     },
     onError: (err: unknown) => showError('جلب كود', ApiService.showError(err)),

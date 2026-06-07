@@ -3073,14 +3073,6 @@ export interface CardCodesSyncResult {
   synced_at: string;
 }
 
-/** POST /api/cards/sync ثم POST /api/cards/{series}/codes/sync لكل سلسلة — قبل التفعيل */
-export interface ActivationCardInventorySyncResult {
-  series: CardSeriesSyncResult | null;
-  codes: CardCodesSyncResult[];
-  series_synced: number;
-  codes_synced: number;
-}
-
 /** GET /api/cards/{series}/codes/next-unused */
 export interface CardNextUnusedResponse {
   series: string;
@@ -3116,6 +3108,24 @@ export interface ActivatePackagesResponse {
     profile_name?: string;
   };
 }
+
+/** GET /api/activate/latest-card — أحدث PIN من SAS مباشرة (آخر 3 صفحات) */
+export interface ActivateLatestCardResponse {
+  series: string;
+  pin: string;
+  serialnumber?: string | null;
+  sas_code_id?: number | null;
+  created_at?: string | null;
+  source?: string;
+  sas_path?: string;
+  profile_id?: number | null;
+  profile_name?: string | null;
+  recommended_series?: string;
+  series_candidates?: string[];
+}
+
+/** GET /api/cards/{series}/codes/latest-from-sas — أحدث PIN من SAS (آخر 3 صفحات) */
+export type CardLatestFromSasResponse = ActivateLatestCardResponse;
 
 /** GET /api/subscribers/extend-day/status — زر تمديد يوم (1-DAY) */
 export interface ExtendDayStatusResponse {

@@ -66,7 +66,7 @@ import {
   statusBadgeClassFromDays,
   statusLabelFromDaysRemaining,
 } from '../utils/subscriberExpiry';
-import { Subscriber, SubscriptionStatus, SubscriptionType, SubscriberCreateRequest, Profile, RenewalData, RenewalActivationMode, PaymentStatus, PaginatedResponse, PaginationParams, UserRole, ServiceType, SubscriberNoteType, EARTHLINK_USER_MANAGEMENT_URL, AgentReseller, ProfilePackageType, formatServiceTypeLabelAr, SUBSCRIBER_FETCH_LIMIT_PRESETS, type CashbackSynchronizationFtthResponse, type CashbackSynchronizationFtthRow, type ZainfiSubscriberDiffResponse, type ZainfiSubscriberDiffItem, type ZainfiApplyExternalExpirationRequest, type ActivationInvoicePrintSettingsDto, type BalanceTopUpRequest, type Dealer, type SubscriberNoteTypeOption, User, type RenewalReceipt, type ActivateSubscriberResponse, type ActivatePackageItem, type ActivationCardInventorySyncResult } from '../types';
+import { Subscriber, SubscriptionStatus, SubscriptionType, SubscriberCreateRequest, Profile, RenewalData, RenewalActivationMode, PaymentStatus, PaginatedResponse, PaginationParams, UserRole, ServiceType, SubscriberNoteType, EARTHLINK_USER_MANAGEMENT_URL, AgentReseller, ProfilePackageType, formatServiceTypeLabelAr, SUBSCRIBER_FETCH_LIMIT_PRESETS, type CashbackSynchronizationFtthResponse, type CashbackSynchronizationFtthRow, type ZainfiSubscriberDiffResponse, type ZainfiSubscriberDiffItem, type ZainfiApplyExternalExpirationRequest, type ActivationInvoicePrintSettingsDto, type BalanceTopUpRequest, type Dealer, type SubscriberNoteTypeOption, User, type RenewalReceipt, type ActivateSubscriberResponse, type ActivatePackageItem } from '../types';
 import {
   buildActivationReceiptPrintHtml,
   embedActivationReceiptStaticImages,
@@ -502,30 +502,6 @@ const SubscribersPage: React.FC = () => {
   const renewalGeneralNotesTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const columnSettingsRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
-  /** مزامنة سلاسل وأكواد الكروت من SAS — يُشارك بين فتح المودال والتفعيل الفعلي */
-  const activationCardSyncPromiseRef = useRef<Promise<ActivationCardInventorySyncResult | null> | null>(
-    null
-  );
-
-  const triggerActivationCardSync = useCallback((): Promise<ActivationCardInventorySyncResult | null> => {
-    if (activationCardSyncPromiseRef.current) {
-      return activationCardSyncPromiseRef.current;
-    }
-    const promise = apiService
-      .syncActivationCardInventory()
-      .then((res) => {
-        void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
-        void queryClient.invalidateQueries({ queryKey: ['cardCodes'] });
-        void queryClient.invalidateQueries({ queryKey: ['activate-packages'] });
-        return res;
-      })
-      .catch(() => null)
-      .finally(() => {
-        activationCardSyncPromiseRef.current = null;
-      });
-    activationCardSyncPromiseRef.current = promise;
-    return promise;
-  }, [queryClient]);
 
   const isAgentOrSubAgentOrEmployee =
     user?.role === UserRole.Agent || user?.role === UserRole.SubAgent || user?.role === UserRole.Employee;
@@ -765,14 +741,12 @@ const SubscribersPage: React.FC = () => {
     error: activatePackagesError,
   } = useQuery({
     queryKey: ['activate-packages', pythonActivateResellerId, activateUsername],
-    queryFn: async () => {
-      await triggerActivationCardSync();
-      return apiService.getActivatePackages({
+    queryFn: () =>
+      apiService.getActivatePackages({
         username: activateUsername,
         live: false,
-        fromSas: false,
-      });
-    },
+        fromSas: true,
+      }),
     enabled:
       showRenewalModal && isPythonBackend() && !!pythonActivateResellerId && !!activateUsername,
     retry: false,
@@ -1907,7 +1881,6 @@ const SubscribersPage: React.FC = () => {
     setShowRenewalModal(true);
     void queryClient.invalidateQueries({ queryKey: ['activate-modes', rid] });
     void queryClient.invalidateQueries({ queryKey: ['activate-packages'] });
-    void triggerActivationCardSync();
   };
 
   const extendDayTargetSubscriber = useMemo(() => {
@@ -1987,18 +1960,27 @@ const SubscribersPage: React.FC = () => {
         activateSelectedPackageKey
       );
       const pkg = selectedActivatePackage;
-      await triggerActivationCardSync();
       const packagePrice = pythonPackagePrice!;
       const rawPaid = renewalData.amountPaid;
       const amountPaid =
         rawPaid != null && Number.isFinite(Number(rawPaid))
           ? Math.max(0, Math.min(packagePrice, Number(rawPaid)))
           : packagePrice;
+      const latestCard = await apiService.getActivateLatestCard({
+        profileId: profileId ?? pkg?.profile_id,
+        profileName: profileName ?? pkg?.profile_name,
+        series: pkg?.recommended_series ?? undefined,
+      });
+      if (!latestCard.pin?.trim() || !latestCard.series?.trim()) {
+        throw new Error('لا يوجد كود متاح على SAS لهذه الباقة');
+      }
       return apiService.activateSubscriber({
         username,
+        card_pin: latestCard.pin.trim(),
+        series: latestCard.series.trim(),
         profile_id: profileId ?? pkg?.profile_id,
         profile_name: profileName ?? pkg?.profile_name,
-        sync_codes: true,
+        sync_codes: false,
         mock: false,
         package_price: packagePrice,
         amount_paid: amountPaid,
