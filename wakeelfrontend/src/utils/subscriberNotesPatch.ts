@@ -4,13 +4,13 @@ import type { SubscriberNoteType } from '../types';
 function normNoteType(t: SubscriberNoteType | null | undefined): number | null {
   if (t === null || t === undefined) return null;
   const n = Number(t);
-  if (n >= 1 && n <= 6) return n;
+  if (n >= 1 && n <= 5) return n;
   return null;
 }
 
 /**
  * يبني جسم PATCH /Subscribers/{id}/notes حسب SubscriberNotesPatchDto:
- * - noteType: 1–6 فقط عند تغيّر النوع
+ * - noteType: 1–5 فقط عند تغيّر النوع
  * - clearNoteType: true عند إزالة النوع (لا يُجمع مع noteType)
  * - note: عند تغيّر النص فقط؛ نص غير فارغ
  * - clearNote: true عند مسح النص (كان غير فارغ وأصبح فارغاً)

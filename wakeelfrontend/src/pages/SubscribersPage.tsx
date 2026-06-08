@@ -77,7 +77,7 @@ import {
 } from '../utils/activationReceiptPrintHtml';
 import { getBaghdadDefaultExportRangeLast30Days, getBaghdadRangeBoundsIso, getBaghdadTodayYmd } from '../utils/iraqCalendar';
 import { styleAccountsExportExcelBlob } from '../utils/excelExport';
-import { SUBSCRIBER_NOTE_TYPE_LABEL_AR } from '../utils/subscriberNoteTypeLabels';
+import { SUBSCRIBER_NOTE_TYPE_LABEL_AR, getSubscriberLocalNote } from '../utils/subscriberNoteTypeLabels';
 import EditSubscriberModal from '../components/EditSubscriberModal';
 import SasEditSubscriberModal from '../components/SasEditSubscriberModal';
 import AddNoteModal from '../components/AddNoteModal';
@@ -127,6 +127,7 @@ const SUBSCRIBERS_TABLE_COLUMNS: { id: string; label: string }[] = [
   { id: 'expirationDate', label: 'تاريخ الانتهاء' },
   { id: 'daysRemaining', label: 'الأيام المتبقية' },
   { id: 'status', label: 'الحالة' },
+  { id: 'hasDebt', label: 'دين' },
 ];
 
 type ConnectionStatusFilter = 'all' | 'online' | 'offline';
@@ -182,6 +183,8 @@ function getSubscriberSortValue(
         subscriber.daysUntilExpiry ??
         (subscriber.expirationDate ? daysUntilExpiration(subscriber.expirationDate) : 0)
       );
+    case 'hasDebt':
+      return subscriber.hasDebt === true ? 1 : subscriber.hasDebt === false ? 0 : -1;
     default:
       return '';
   }
@@ -276,14 +279,12 @@ function getSubscriberNoteTypeBadge(noteType?: SubscriberNoteType | null, note?:
   const styles: Record<number, string> = {
     [SubscriberNoteType.NoResponse]:
       'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300',
-    [SubscriberNoteType.WillActivateSoon]:
-      'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300',
     [SubscriberNoteType.DoesNotWantActivation]:
       'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300',
-    [SubscriberNoteType.BadService]:
-      'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-300',
-    [SubscriberNoteType.NeedsMaintenance]:
+    [SubscriberNoteType.MaintenanceRequest]:
       'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300',
+    [SubscriberNoteType.StableService]:
+      'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300',
     [SubscriberNoteType.Other]:
       'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-300',
   };
@@ -472,6 +473,9 @@ const SubscribersPage: React.FC = () => {
   /** مفتاح الباقة من GET /activate/packages (id:123 أو name:NOVA) */
   const [activateSelectedPackageKey, setActivateSelectedPackageKey] = useState('');
   const [pythonActivateStep, setPythonActivateStep] = useState<1 | 2>(1);
+  const [activateEmployeeCode, setActivateEmployeeCode] = useState('');
+  const [showActivateEmployeeConfirm, setShowActivateEmployeeConfirm] = useState(false);
+  const [showActivateDebtConfirm, setShowActivateDebtConfirm] = useState(false);
   /** رسيلر مثبّت عند فتح مودال التفعيل (X-Reseller-Id + select) */
   const [activateModalResellerId, setActivateModalResellerId] = useState('');
   /** جاهزية POST /resellers/{id}/select قبل جلب الباقات */
@@ -525,6 +529,23 @@ const SubscribersPage: React.FC = () => {
     enabled: isPythonBackend(),
     staleTime: 600_000,
   });
+
+  const { data: pythonSubscriberNoteTypes = [] } = useQuery({
+    queryKey: ['subscriber-note-types'],
+    queryFn: () => apiService.getPythonSubscriberNoteTypes(),
+    enabled: isPythonBackend(),
+    staleTime: 600_000,
+  });
+
+  const subscriberNoteTypeFilterOptions = useMemo(() => {
+    if (isPythonBackend() && pythonSubscriberNoteTypes.length > 0) {
+      return pythonSubscriberNoteTypes;
+    }
+    return [1, 2, 3, 4, 5].map((v) => ({
+      value: v,
+      label: SUBSCRIBER_NOTE_TYPE_LABEL_AR[v as SubscriberNoteType] ?? String(v),
+    }));
+  }, [pythonSubscriberNoteTypes]);
 
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => loadVisibleColumns());
   const [showColumnSettings, setShowColumnSettings] = useState(false);
@@ -1865,6 +1886,8 @@ const SubscribersPage: React.FC = () => {
     setActivateModalResellerId('');
     setActivateResellerReady(false);
     activateResellerSelectRef.current = null;
+    setActivateEmployeeCode('');
+    setShowActivateEmployeeConfirm(false);
     setAmountReceivedInFull(true);
     clearSubscriberSelection();
   };
@@ -1908,6 +1931,7 @@ const SubscribersPage: React.FC = () => {
     setActivateModalResellerId(rid);
     setActivateResellerReady(false);
     setAmountReceivedInFull(true);
+    setActivateEmployeeCode('');
     setRenewalData((prev) => ({
       ...prev,
       subscriberId: subscriber.id,
@@ -2027,6 +2051,7 @@ const SubscribersPage: React.FC = () => {
         mock: false,
         package_price: packagePrice,
         amount_paid: amountPaid,
+        employee_code: activateEmployeeCode.trim(),
       });
     },
     onSuccess: async (res) => {
@@ -2044,6 +2069,23 @@ const SubscribersPage: React.FC = () => {
       const pkg = selectedActivatePackage;
       const price = pythonPackagePrice;
       const paidAmount = renewalData.amountPaid;
+      const pickedNoteType = renewalData.subscriberNoteType;
+
+      if (
+        !res.debt_created &&
+        pickedNoteType != null &&
+        Number.isFinite(Number(pickedNoteType)) &&
+        sub?.id
+      ) {
+        try {
+          await apiService.patchSubscriberNotes(sub.id, { noteType: Number(pickedNoteType) });
+        } catch (patchErr) {
+          showError(
+            'تنبيه بعد التفعيل',
+            `تم التفعيل لكن تعذر حفظ نوع الملاحظة: ${ApiService.showError(patchErr)}`
+          );
+        }
+      }
 
       void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
       void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
@@ -2505,6 +2547,39 @@ const SubscribersPage: React.FC = () => {
       return;
     }
 
+    const subId = String(
+      selectedSubscriberForRenewal?.id ?? selectedSubscriberForRenewal?.secruptionId ?? ''
+    ).trim();
+    let hasDebt = selectedSubscriberForRenewal?.hasDebt === true;
+    if (!hasDebt && subId) {
+      try {
+        const check = await apiService.getSubscriberHasDebt(subId);
+        hasDebt = check.hasDebt;
+      } catch {
+        /* إن فشل التحقق نتابع بدون تنبيه */
+      }
+    }
+    if (hasDebt) {
+      setShowActivateDebtConfirm(true);
+      return;
+    }
+
+    setActivateEmployeeCode((prev) => prev.trim() || (user?.employeeCode ?? '').trim());
+    setShowActivateEmployeeConfirm(true);
+  };
+
+  const proceedToActivateEmployeeConfirm = () => {
+    setShowActivateDebtConfirm(false);
+    setActivateEmployeeCode((prev) => prev.trim() || (user?.employeeCode ?? '').trim());
+    setShowActivateEmployeeConfirm(true);
+  };
+
+  const confirmPythonActivateWithEmployeeCode = () => {
+    if (pythonActivateBusy) return;
+    if (!/^\d{4}$/.test(activateEmployeeCode.trim())) {
+      showError('رمز الموظف', 'أدخل رمز الموظف — 4 أرقام');
+      return;
+    }
     pythonActivateMutation.mutate();
   };
 
@@ -3584,8 +3659,8 @@ const SubscribersPage: React.FC = () => {
           <div className="mt-3 p-4 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-lg">
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
               {isPythonBackend()
-                ? 'القائمة من قاعدة البيانات بعد المزامنة. فلتر «حالة الاتصال» (متصل / غير متصل) يجلب مباشرة من SAS (/index/online أو /index/user) ويحدّث online_status محلياً. باقي الفلاتر: حالة الاشتراك، تاريخ انتهاء (expiration_date)، الاسم، اسم المستخدم، الهاتف، أو معرّف المشترك.'
-                : 'الحالة، الكابينة، المنطقة، نوع الملاحظة، ترتيب التاريخ، الأيام حتى الانتهاء، ونطاق تاريخ انتهاء الاشتراك.'}
+                ? 'القائمة من قاعدة البيانات بعد المزامنةindex/online أو /index/user) ويحدّث online_status محلياً. باقي الفلاتر: حالة الاشتراك، تاريخ انتهاء (expiration_date)، الاسم، اسم المستخدم، الهاتف، أو معرّف المشترك.'
+                : ''}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               <div>
@@ -3692,12 +3767,11 @@ const SubscribersPage: React.FC = () => {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white text-sm"
                     >
                       <option value="all">كل الملاحظات</option>
-                      <option value={SubscriberNoteType.NoResponse}>لم يتم الرد</option>
-                      <option value={SubscriberNoteType.WillActivateSoon}>ستتم التفعيل قريباً</option>
-                      <option value={SubscriberNoteType.DoesNotWantActivation}>لا يرغب في التفعيل</option>
-                      <option value={SubscriberNoteType.BadService}>واصل ماستر</option>
-                      <option value={SubscriberNoteType.NeedsMaintenance}>واصل مكتب الزهور</option>
-                      <option value={SubscriberNoteType.Other}>أخرى</option>
+                      {subscriberNoteTypeFilterOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -3962,12 +4036,17 @@ const SubscribersPage: React.FC = () => {
                     {getSubscriberNoteTypeBadge(subscriber.noteType, subscriber.note ?? null)}
                   </td>
                   <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 text-xs sm:text-sm text-gray-900 dark:text-white ${col('note')}`}>
+                    {(() => {
+                      const localNote = getSubscriberLocalNote(subscriber);
+                      return (
                     <div
                       className="max-w-[180px] sm:max-w-[240px] truncate"
-                      title={(subscriber.note || '').toString()}
+                      title={localNote}
                     >
-                      {(subscriber.note || '').toString().trim() || '—'}
+                      {localNote || '—'}
                     </div>
+                      );
+                    })()}
                   </td>
                   <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white ${col('profile')}`}>
                     {subscriber.profileName}
@@ -4011,6 +4090,19 @@ const SubscribersPage: React.FC = () => {
                   </td>
                   <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap ${col('status')}`}>
                     {getStatusBadge(subscriber)}
+                  </td>
+                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap text-xs sm:text-sm ${col('hasDebt')}`}>
+                    {subscriber.hasDebt === true ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200 border border-red-200 dark:border-red-800">
+                        نعم
+                      </span>
+                    ) : subscriber.hasDebt === false ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800">
+                        لا
+                      </span>
+                    ) : (
+                      '—'
+                    )}
                   </td>
                 </tr>
               ))}
@@ -4274,10 +4366,9 @@ const SubscribersPage: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white"
                   >
                     <option value={SubscriberNoteType.NoResponse}>لم يتم الرد</option>
-                    <option value={SubscriberNoteType.WillActivateSoon}>ستتم التفعيل قريباً</option>
-                    <option value={SubscriberNoteType.DoesNotWantActivation}>لا يرغب في التفعيل</option>
-                    <option value={SubscriberNoteType.BadService}>واصل ماستر</option>
-                    <option value={SubscriberNoteType.NeedsMaintenance}>واصل مكتب الزهور</option>
+                    <option value={SubscriberNoteType.DoesNotWantActivation}>لايرغب بالتفعيل</option>
+                    <option value={SubscriberNoteType.MaintenanceRequest}>طلب صيانة</option>
+                    <option value={SubscriberNoteType.StableService}>الخدمة مستقرة</option>
                     <option value={SubscriberNoteType.Other}>أخرى</option>
                   </select>
                 </div>
@@ -4479,6 +4570,40 @@ const SubscribersPage: React.FC = () => {
                       showError={(err) => ApiService.showError(err)}
                       isActivating={pythonActivateBusy}
                     />
+                  )}
+
+                  {isPythonBackend() && pythonActivateResellerId && pythonActivateStep === 2 && (
+                    <div className="max-w-md mx-auto space-y-3">
+                      <div>
+                        <label className="block text-sm text-gray-600 dark:text-gray-400">
+                          نوع الملاحظة <span className="text-gray-400 font-normal">(اختياري — محلي)</span>
+                        </label>
+                        <select
+                        value={
+                          renewalData.subscriberNoteType != null &&
+                          Number.isFinite(renewalData.subscriberNoteType)
+                            ? String(renewalData.subscriberNoteType)
+                            : ''
+                        }
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setRenewalData((p) => ({
+                            ...p,
+                            subscriberNoteType: v === '' ? null : parseInt(v, 10),
+                          }));
+                        }}
+                        disabled={pythonActivateBusy}
+                        className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white disabled:opacity-60"
+                      >
+                        <option value="">— بدون —</option>
+                        {subscriberNoteTypeFilterOptions.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      </div>
+                    </div>
                   )}
 
                   {!isPythonBackend() && (
@@ -4875,7 +5000,7 @@ const SubscribersPage: React.FC = () => {
                       className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed min-w-[140px]"
                     >
                       {(isPythonBackend()
-                        ? pythonActivateBusy
+                        ? pythonActivateBusy && showActivateEmployeeConfirm
                         : createRenewalMutation.isPending) ? (
                         <>
                           <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
@@ -4896,6 +5021,137 @@ const SubscribersPage: React.FC = () => {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {showActivateDebtConfirm && (
+        <div
+          className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="activate-debt-confirm-title"
+        >
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200/90 dark:border-gray-700 w-full max-w-md overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h2
+                id="activate-debt-confirm-title"
+                className="text-lg font-bold text-gray-900 dark:text-white"
+              >
+                تنبيه — دين على المشترك
+              </h2>
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
+                لدى المشترك{' '}
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  {activateSubscriberName || activateUsername || 'المشترك'}
+                </span>{' '}
+                ديون غير مسدّدة. هل تريد المتابعة بالتفعيل؟
+              </p>
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 px-5 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/90 dark:bg-gray-900/40">
+              <button
+                type="button"
+                onClick={() => setShowActivateDebtConfirm(false)}
+                className="w-full sm:w-auto px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                لا
+              </button>
+              <button
+                type="button"
+                onClick={proceedToActivateEmployeeConfirm}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl bg-amber-600 hover:bg-amber-700 text-white shadow-md min-w-[120px]"
+              >
+                نعم — متابعة
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showActivateEmployeeConfirm && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="activate-employee-confirm-title"
+        >
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200/90 dark:border-gray-700 w-full max-w-md overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h2
+                id="activate-employee-confirm-title"
+                className="text-lg font-bold text-gray-900 dark:text-white"
+              >
+                تأكيد التفعيل
+              </h2>
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
+                هل أنت متأكد من تفعيل{' '}
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  {activateSubscriberName || activateUsername || 'المشترك'}
+                </span>
+                ؟
+              </p>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <div>
+                <label
+                  htmlFor="activate-employee-code-confirm"
+                  className="block text-sm text-gray-600 dark:text-gray-400 mb-1"
+                >
+                  رمز الموظف <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="activate-employee-code-confirm"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={4}
+                  pattern="\d{4}"
+                  dir="ltr"
+                  autoFocus
+                  autoComplete="off"
+                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-mono tracking-widest text-center text-lg disabled:opacity-60"
+                  placeholder="••••"
+                  value={activateEmployeeCode}
+                  onChange={(e) =>
+                    setActivateEmployeeCode(e.target.value.replace(/\D/g, '').slice(0, 4))
+                  }
+                  disabled={pythonActivateBusy}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      confirmPythonActivateWithEmployeeCode();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 px-5 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/90 dark:bg-gray-900/40">
+              <button
+                type="button"
+                onClick={() => {
+                  if (pythonActivateBusy) return;
+                  setShowActivateEmployeeConfirm(false);
+                }}
+                disabled={pythonActivateBusy}
+                className="w-full sm:w-auto px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={confirmPythonActivateWithEmployeeCode}
+                disabled={pythonActivateBusy || !/^\d{4}$/.test(activateEmployeeCode.trim())}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed min-w-[120px]"
+              >
+                {pythonActivateBusy ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                    جاري التفعيل...
+                  </>
+                ) : (
+                  'تأكيد التفعيل'
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

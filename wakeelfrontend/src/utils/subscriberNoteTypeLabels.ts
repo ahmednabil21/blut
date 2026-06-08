@@ -1,28 +1,26 @@
 import { SubscriberNoteType } from '../types';
 
-/**
- * تسميات عربية موحّدة مع `Wakeel.Enums.SubscriberNoteType` (الخادم) وواجهة التطبيق.
- * أرقام الـ enum ثابتة (1–6؛ BadService = 4، NeedsMaintenance = 5، …)؛ أي تعديل لاحق يكون على النصوص المعروضة فقط.
- *
- * | القيمة | المعنى |
- * |--------|--------|
- * | 1 | لم يتم الرد |
- * | 2 | ستتم التفعيل قريباً |
- * | 3 | لا يرغب في التفعيل |
- * | 4 | واصل ماستر |
- * | 5 | واصل مكتب الزهور |
- * | 6 | أخرى (نص حر في الملاحظة) |
- */
+/** تسميات أنواع ملاحظات المشترك المحلية (FastAPI — لا تُجلب من SAS). */
 export const SUBSCRIBER_NOTE_TYPE_LABEL_AR: Record<SubscriberNoteType, string> = {
   [SubscriberNoteType.NoResponse]: 'لم يتم الرد',
-  [SubscriberNoteType.WillActivateSoon]: 'ستتم التفعيل قريباً',
-  [SubscriberNoteType.DoesNotWantActivation]: 'لا يرغب في التفعيل',
-  [SubscriberNoteType.BadService]: 'واصل ماستر',
-  [SubscriberNoteType.NeedsMaintenance]: 'واصل مكتب الزهور',
+  [SubscriberNoteType.DoesNotWantActivation]: 'لايرغب بالتفعيل',
+  [SubscriberNoteType.MaintenanceRequest]: 'طلب صيانة',
+  [SubscriberNoteType.StableService]: 'الخدمة مستقرة',
   [SubscriberNoteType.Other]: 'أخرى',
 };
 
-/** تسمية عربية لقيمة رقمية (API، Excel، …) ضمن 1–6 فقط */
+/** تسمية عربية لقيمة رقمية (API، Excel، …) ضمن 1–5 */
 export function subscriberNoteTypeLabelAr(value: number): string | undefined {
   return SUBSCRIBER_NOTE_TYPE_LABEL_AR[value as SubscriberNoteType];
+}
+
+/** نص local_note للعرض — فقط عند «أخرى» أو legacy بدون نوع */
+export function getSubscriberLocalNote(subscriber: {
+  noteType?: SubscriberNoteType | null;
+  note?: string | null;
+}): string {
+  const text = (subscriber.note ?? '').toString().trim();
+  if (subscriber.noteType === SubscriberNoteType.Other) return text;
+  if (!subscriber.noteType && text) return text;
+  return '';
 }

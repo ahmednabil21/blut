@@ -14,7 +14,6 @@ export interface SasSubscriberUpdatePayload {
   isActive?: boolean;
   zone?: string;
   fat?: string;
-  note?: string;
 }
 
 interface SasProfileOption {
@@ -59,7 +58,6 @@ const SasEditSubscriberModal: React.FC<SasEditSubscriberModalProps> = ({
       isActive: subscriber.isActive,
       zone: subscriber.zone ?? '',
       fat: subscriber.fat ?? '',
-      note: subscriber.note ?? '',
     });
   }, [isOpen, subscriber, profiles]);
 
@@ -117,7 +115,6 @@ const SasEditSubscriberModal: React.FC<SasEditSubscriberModalProps> = ({
         isActive: formData.isActive,
         zone: formData.zone?.trim() || undefined,
         fat: formData.fat?.trim() || undefined,
-        note: formData.note?.trim() || undefined,
       };
       if (formData.password?.trim()) {
         payload.password = formData.password.trim();
@@ -332,19 +329,6 @@ const SasEditSubscriberModal: React.FC<SasEditSubscriberModalProps> = ({
             <label htmlFor="sas-edit-active" className="text-sm text-gray-700 dark:text-gray-300">
               مشترك مفعّل على SAS
             </label>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              ملاحظات (SAS)
-            </label>
-            <textarea
-              name="note"
-              value={formData.note ?? ''}
-              onChange={handleInputChange}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
-            />
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">

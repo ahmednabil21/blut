@@ -31,6 +31,7 @@ const SasEmployeesPage: React.FC = () => {
     full_name: '',
     username: '',
     password: '',
+    employee_code: '',
     job_title: '',
     salary: undefined,
     permissions: { ...DEFAULT_SAS_EMPLOYEE_PERMISSIONS },
@@ -57,6 +58,7 @@ const SasEmployeesPage: React.FC = () => {
         full_name: '',
         username: '',
         password: '',
+        employee_code: '',
         job_title: '',
         salary: undefined,
         permissions: { ...DEFAULT_SAS_EMPLOYEE_PERMISSIONS },
@@ -111,6 +113,7 @@ const SasEmployeesPage: React.FC = () => {
     setEditForm({
       full_name: emp.full_name,
       username: emp.username,
+      employee_code: emp.employee_code || '',
       job_title: emp.job_title || '',
       salary: emp.salary ?? undefined,
       is_active: emp.is_active,
@@ -154,6 +157,7 @@ const SasEmployeesPage: React.FC = () => {
             <thead className="bg-gray-50 dark:bg-gray-800">
               <tr>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">الاسم</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">الرمز</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">المستخدم</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">العمل</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">الراتب</th>
@@ -167,6 +171,9 @@ const SasEmployeesPage: React.FC = () => {
               {employees.map((emp) => (
                 <tr key={emp.id}>
                   <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">{emp.full_name}</td>
+                  <td className="px-4 py-3 text-sm font-mono" dir="ltr">
+                    {emp.employee_code || '—'}
+                  </td>
                   <td className="px-4 py-3 text-sm font-mono" dir="ltr">
                     {emp.username}
                   </td>
@@ -246,6 +253,18 @@ const SasEmployeesPage: React.FC = () => {
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
               />
               <input
+                className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 font-mono"
+                placeholder="رمز الموظف (4 أرقام)"
+                dir="ltr"
+                maxLength={4}
+                inputMode="numeric"
+                pattern="\d{4}"
+                value={form.employee_code}
+                onChange={(e) =>
+                  setForm({ ...form, employee_code: e.target.value.replace(/\D/g, '').slice(0, 4) })
+                }
+              />
+              <input
                 className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700"
                 placeholder="عمل الموظف"
                 value={form.job_title || ''}
@@ -287,6 +306,10 @@ const SasEmployeesPage: React.FC = () => {
                     showError('خطأ', 'يرجى تعبئة الاسم واسم المستخدم وكلمة السر');
                     return;
                   }
+                  if (!/^\d{4}$/.test(form.employee_code.trim())) {
+                    showError('خطأ', 'رمز الموظف يجب أن يكون 4 أرقام');
+                    return;
+                  }
                   createMutation.mutate(form);
                 }}
                 className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -324,6 +347,20 @@ const SasEmployeesPage: React.FC = () => {
                 className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700"
                 placeholder="كلمة سر جديدة (اختياري)"
                 onChange={(e) => setEditForm({ ...editForm, password: e.target.value || undefined })}
+              />
+              <input
+                className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 font-mono"
+                placeholder="رمز الموظف (4 أرقام)"
+                dir="ltr"
+                maxLength={4}
+                inputMode="numeric"
+                value={editForm.employee_code || ''}
+                onChange={(e) =>
+                  setEditForm({
+                    ...editForm,
+                    employee_code: e.target.value.replace(/\D/g, '').slice(0, 4),
+                  })
+                }
               />
               <input
                 className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700"
@@ -370,7 +407,14 @@ const SasEmployeesPage: React.FC = () => {
               <button
                 type="button"
                 disabled={updateMutation.isPending}
-                onClick={() => updateMutation.mutate({ id: selected.id, data: editForm })}
+                onClick={() => {
+                  const code = (editForm.employee_code || '').trim();
+                  if (code && !/^\d{4}$/.test(code)) {
+                    showError('خطأ', 'رمز الموظف يجب أن يكون 4 أرقام');
+                    return;
+                  }
+                  updateMutation.mutate({ id: selected.id, data: editForm });
+                }}
                 className="w-full py-2 bg-blue-600 text-white rounded-lg"
               >
                 حفظ التعديلات

@@ -130,6 +130,13 @@ export function buildPythonSubscribersQueryParams(
     out.sortDescending = params.sortDescending === true;
   }
 
+  if (params?.noteType !== undefined && params.noteType !== null) {
+    const nt = Number(params.noteType);
+    if (Number.isFinite(nt) && nt >= 1 && nt <= 5) {
+      out.noteType = nt;
+    }
+  }
+
   return out;
 }
 

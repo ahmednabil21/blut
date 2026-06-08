@@ -87,10 +87,9 @@ const AddNoteModal: React.FC<AddNoteModalProps> = ({
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white"
             >
               <option value={SubscriberNoteType.NoResponse}>لم يتم الرد</option>
-              <option value={SubscriberNoteType.WillActivateSoon}>ستتم التفعيل قريباً</option>
-              <option value={SubscriberNoteType.DoesNotWantActivation}>لا يرغب في التفعيل</option>
-              <option value={SubscriberNoteType.BadService}>واصل ماستر</option>
-              <option value={SubscriberNoteType.NeedsMaintenance}>واصل مكتب الزهور</option>
+              <option value={SubscriberNoteType.DoesNotWantActivation}>لايرغب بالتفعيل</option>
+              <option value={SubscriberNoteType.MaintenanceRequest}>طلب صيانة</option>
+              <option value={SubscriberNoteType.StableService}>الخدمة مستقرة</option>
               <option value={SubscriberNoteType.Other}>أخرى</option>
             </select>
           </div>

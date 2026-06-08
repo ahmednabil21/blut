@@ -50,7 +50,7 @@ import { useDigits } from '../contexts/DigitsContext';
 import { useMyAgent } from '../hooks/useMyAgent';
 import Pagination from '../components/Pagination';
 import { showSuccess, showError } from '../utils/notifications';
-import { SUBSCRIBER_NOTE_TYPE_LABEL_AR } from '../utils/subscriberNoteTypeLabels';
+import { SUBSCRIBER_NOTE_TYPE_LABEL_AR, getSubscriberLocalNote } from '../utils/subscriberNoteTypeLabels';
 
 const RENEWAL_PAGE_SIZE = 10;
 const SESSIONS_PAGE_SIZE = 10;
@@ -348,14 +348,12 @@ const SubscriberDetailsPage: React.FC = () => {
     const styles: Record<number, string> = {
       [SubscriberNoteType.NoResponse]:
         'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300',
-      [SubscriberNoteType.WillActivateSoon]:
-        'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300',
       [SubscriberNoteType.DoesNotWantActivation]:
         'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300',
-      [SubscriberNoteType.BadService]:
-        'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-300',
-      [SubscriberNoteType.NeedsMaintenance]:
+      [SubscriberNoteType.MaintenanceRequest]:
         'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300',
+      [SubscriberNoteType.StableService]:
+        'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300',
       [SubscriberNoteType.Other]:
         'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-300',
     };
@@ -677,12 +675,10 @@ const SubscriberDetailsPage: React.FC = () => {
                 <InfoCell label="الكابينة (FAT)" value={subscriber.fat?.trim() || '—'} icon={<MapPin className="h-3.5 w-3.5" />} />
                 <InfoCell label="المنطقة" value={subscriber.zone?.trim() || '—'} />
                 <InfoCell label="نوع الملاحظة" value="" custom={getNoteTypeBadge(subscriber.noteType, subscriber.note ?? null)} />
-                {((subscriber.noteType === SubscriberNoteType.Other) ||
-                  (!subscriber.noteType && (subscriber.note || '').toString().trim())) &&
-                  (subscriber.note || '').toString().trim() && (
+                {getSubscriberLocalNote(subscriber) && (
                     <div className="sm:col-span-2 lg:col-span-3 p-4 bg-gray-50/80 dark:bg-gray-800/40">
                       <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">نص الملاحظة</p>
-                      <p className="text-sm text-gray-900 dark:text-white whitespace-pre-wrap">{(subscriber.note || '').toString().trim()}</p>
+                      <p className="text-sm text-gray-900 dark:text-white whitespace-pre-wrap">{getSubscriberLocalNote(subscriber)}</p>
                     </div>
                   )}
               </div>

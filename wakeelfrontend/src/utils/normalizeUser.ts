@@ -124,6 +124,10 @@ export function normalizeUser(raw: unknown): User {
   const salaryRaw = r.salary ?? r.Salary;
   if (salaryRaw != null && salaryRaw !== '') u.salary = Number(salaryRaw);
 
+  const employeeCode =
+    pickStr(r, 'employeeCode', 'EmployeeCode') || pickStr(r, 'employee_code', 'EmployeeCode');
+  if (employeeCode) u.employeeCode = employeeCode;
+
   const roleStr = typeof r.role === 'string' ? r.role : '';
   const perms = sasPermissionFromLoginPayload(r);
   if (perms || roleStr === 'agent_admin' || roleStr === 'employee') {

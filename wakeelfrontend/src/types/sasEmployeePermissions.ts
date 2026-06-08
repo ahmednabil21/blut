@@ -81,6 +81,7 @@ export interface SasEmployeeRecord {
   id: number;
   username: string;
   full_name: string;
+  employee_code?: string | null;
   job_title?: string | null;
   salary?: number | null;
   role: string;
@@ -95,6 +96,7 @@ export interface SasEmployeeCreateRequest {
   full_name: string;
   username: string;
   password: string;
+  employee_code: string;
   job_title?: string;
   salary?: number;
   permissions?: Partial<SasEmployeePermissions>;
@@ -105,6 +107,7 @@ export interface SasEmployeeUpdateRequest {
   full_name?: string;
   username?: string;
   password?: string;
+  employee_code?: string;
   job_title?: string;
   salary?: number;
   permissions?: Partial<SasEmployeePermissions>;

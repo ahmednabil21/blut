@@ -28,20 +28,18 @@ export enum PaymentStatus {
   Unknown = 0  // للقيم غير المعرفة من الباكند
 }
 
-/** يطابق `Wakeel.Enums.SubscriberNoteType` — الأرقام ثابتة للبيانات المخزّنة؛ التسميات المعروضة في `subscriberNoteTypeLabels.ts`. */
+/** يطابق أنواع ملاحظات المشترك المحلية في FastAPI — 1–5 */
 export enum SubscriberNoteType {
   /** لم يتم الرد */
   NoResponse = 1,
-  /** ستتم التفعيل قريباً */
-  WillActivateSoon = 2,
-  /** لا يرغب في التفعيل */
-  DoesNotWantActivation = 3,
-  /** واصل ماستر */
-  BadService = 4,
-  /** واصل مكتب الزهور */
-  NeedsMaintenance = 5,
+  /** لايرغب بالتفعيل */
+  DoesNotWantActivation = 2,
+  /** طلب صيانة */
+  MaintenanceRequest = 3,
+  /** الخدمة مستقرة */
+  StableService = 4,
   /** أخرى (نص حر في الملاحظة) */
-  Other = 6,
+  Other = 5,
 }
 
 export enum DebtStatus {
@@ -1134,6 +1132,8 @@ export interface User {
   sasCanViewSubscribersBySearch?: boolean;
   jobTitle?: string;
   salary?: number;
+  /** رمز الموظف (4 أرقام) — FastAPI */
+  employeeCode?: string;
   allowedResellerIds?: string[];
   /** اشتراك الوكيل الرئيسي (عندما role = MainAgent) */
   subscriptionType?: SubscriptionSystemType;
@@ -2129,6 +2129,7 @@ export interface Subscriber {
   fullName: string;
   phoneNumber: string;
   noteType?: SubscriberNoteType | null;
+  /** local_note — نص يدوي عند noteType = Other (5) */
   note?: string;
   isActive: boolean;
   /** اشتراك المشترك فعّال (لم ينتهِ). يُستخدم لعرض "فعال" وعدّ المشتركين الفعالين بدلاً من التحقق من status. */
@@ -2156,6 +2157,8 @@ export interface Subscriber {
   /** اسم المنطقة/الرسيلر المرتبط بالمشترك (إن وُجد) */
   agentResellerName?: string | null;
   totalDebt?: number;
+  /** ديون غير مسدّدة — من جدول debts (Python backend) */
+  hasDebt?: boolean;
   /** الكابينة (اختياري، حد أقصى 200 حرف) */
   fat?: string | null;
   /** المنطقة (اختياري، حد أقصى 200 حرف) */
@@ -2190,10 +2193,12 @@ export interface SubscriberCreateRequest {
   agentResellerId: string;
 }
 
-/** PATCH /Subscribers/{id}/notes — تحديث نوع الملاحظة والنص فقط */
+/** PATCH /api/subscribers/{id}/notes — ملاحظات محلية فقط (بدون SAS) */
 export interface SubscriberNotesPatchDto {
+  /** note_type — 1–5 */
   noteType?: number;
   clearNoteType?: boolean;
+  /** local_note — نص «أخرى» فقط */
   note?: string;
   clearNote?: boolean;
 }
@@ -3256,6 +3261,8 @@ export interface ActivateSubscriberRequest {
   package_price?: number;
   /** المبلغ الواصل — إن كان أقل يُسجَّل دين */
   amount_paid?: number;
+  /** رمز الموظف المنفّذ — 4 أرقام */
+  employee_code?: string;
 }
 
 export interface ActivateSubscriberResponse {

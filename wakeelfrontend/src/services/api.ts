@@ -63,6 +63,7 @@ import {
   SubscriberSessionsListResponse,
   SubscriberUpdateRequest,
   SubscriberNotesPatchDto,
+  SubscriberNoteType,
   SubscriberInfo,
   DashboardStats,
   SubscribersDashboardStats,
@@ -241,7 +242,7 @@ import { formatActivateApiDetail } from '../utils/activateApiErrors';
 
 /** قائمة كاملة للاستخدام عندما لا يعيد الـ API كتالوجاً أو يكون فارغاً بعد التطبيع */
 export function defaultSubscriberNoteTypeOptions(): SubscriberNoteTypeOption[] {
-  return [1, 2, 3, 4, 5, 6].map((v) => ({
+  return [1, 2, 3, 4, 5].map((v) => ({
     value: v,
     label: subscriberNoteTypeLabelAr(v) ?? String(v),
   }));
@@ -2151,6 +2152,26 @@ class ApiService {
     const isActive =
       daysRemaining >= 0 &&
       (enabled === 1 || enabled === true || enabled === '1' || enabled === undefined);
+    const noteTypeRaw = row.noteType ?? row.note_type;
+    const noteTypeNum =
+      noteTypeRaw != null && noteTypeRaw !== ''
+        ? Number(noteTypeRaw)
+        : undefined;
+    const noteType =
+      noteTypeNum != null && noteTypeNum >= 1 && noteTypeNum <= 5
+        ? (noteTypeNum as SubscriberNoteType)
+        : undefined;
+    const localNoteRaw = row.local_note ?? row.localNote ?? row.note;
+    const localNote =
+      localNoteRaw != null && String(localNoteRaw).trim() !== ''
+        ? String(localNoteRaw).trim()
+        : undefined;
+    const hasDebtRaw = row.hasDebt ?? row.has_debt;
+    const hasDebt =
+      hasDebtRaw === true ||
+      hasDebtRaw === 1 ||
+      hasDebtRaw === '1' ||
+      hasDebtRaw === 'true';
     return {
       id: sasId,
       secruptionId: sasId,
@@ -2160,7 +2181,8 @@ class ApiService {
       lastName,
       fullName,
       phoneNumber: String(row.phone ?? row.phoneNumber ?? ''),
-      note: row.notes != null ? String(row.notes) : row.note != null ? String(row.note) : undefined,
+      noteType,
+      note: localNote,
       isActive,
       isSubscriptionActive: daysRemaining >= 0,
       activationDate: activationDate || new Date().toISOString(),
@@ -2176,8 +2198,9 @@ class ApiService {
       agentCompanyName: '',
       agentResellerId: (fetchReseller?.id ?? '').trim() || undefined,
       agentResellerName: (fetchReseller?.name ?? '').trim() || undefined,
-      zone: row.city != null ? String(row.city) : row.zone != null ? String(row.zone) : null,
-      fat: row.address != null ? String(row.address) : row.fat != null ? String(row.fat) : null,
+      hasDebt,
+      zone: row.address != null ? String(row.address) : row.zone != null ? String(row.zone) : null,
+      fat: row.city != null ? String(row.city) : row.fat != null ? String(row.fat) : null,
     };
   }
 
@@ -2207,7 +2230,6 @@ class ApiService {
       isActive?: boolean;
       zone?: string;
       fat?: string;
-      note?: string;
     }
   ): Promise<Subscriber> {
     const response = await this.api.put<{
@@ -2566,6 +2588,16 @@ class ApiService {
     if (body.amount_paid != null && Number.isFinite(body.amount_paid)) {
       payload.amount_paid = body.amount_paid;
     }
+    const empCode = (body.employee_code ?? '').trim();
+    const isMock = body.mock === true;
+    if (!isMock) {
+      if (!/^\d{4}$/.test(empCode)) {
+        throw new Error('رمز الموظف مطلوب — 4 أرقام');
+      }
+      payload.employee_code = empCode;
+    } else if (empCode) {
+      payload.employee_code = empCode;
+    }
     const response = await this.api.post<ActivateSubscriberResponse>('/activate', payload);
     return response.data;
   }
@@ -2729,6 +2761,26 @@ class ApiService {
     return response.data;
   }
 
+  /** GET /api/subscribers/note-types — قائمة ثابتة 1–5 */
+  async getPythonSubscriberNoteTypes(): Promise<SubscriberNoteTypeOption[]> {
+    if (!isPythonBackend()) return defaultSubscriberNoteTypeOptions();
+    try {
+      const response = await this.api.get<Record<string, unknown>>('/subscribers/note-types');
+      const body = response.data ?? {};
+      const raw =
+        body.types ??
+        body.data ??
+        body.items ??
+        body.note_types ??
+        body.noteTypes ??
+        body;
+      const parsed = parseSubscriberNoteTypesCatalog(raw);
+      return parsed.length > 0 ? parsed : defaultSubscriberNoteTypeOptions();
+    } catch {
+      return defaultSubscriberNoteTypeOptions();
+    }
+  }
+
   /** GET /api/subscribers/subscription-statuses — حالات الاشتراك (Python) */
   async getPythonSubscriptionStatuses(): Promise<PythonSubscriptionStatusOption[]> {
     if (!isPythonBackend()) return [];
@@ -2755,6 +2807,10 @@ class ApiService {
               }
             : null;
         const queryParams = buildPythonSubscribersQueryParams(params, page, perPage);
+        const needsSasVerify =
+          !!queryParams.expiration_date ||
+          !!queryParams.subscription_status ||
+          !!queryParams.connection_status;
         const response = await this.api.get<{
           data?: unknown[];
           current_page?: number;
@@ -2766,7 +2822,10 @@ class ApiService {
           reseller_id?: number;
           background_sync?: Record<string, unknown>;
           hint?: string;
-        }>('/subscribers', { params: queryParams });
+        }>('/subscribers', {
+          params: queryParams,
+          timeout: needsSasVerify ? 180_000 : undefined,
+        });
         const body = response.data ?? {};
         const list = (Array.isArray(body.data) ? body.data : []) as Record<string, unknown>[];
         const currentPage = body.current_page ?? page;
@@ -3041,6 +3100,21 @@ class ApiService {
   }
 
   async createSubscriber(subscriberData: SubscriberCreateRequest): Promise<Subscriber> {
+    if (isPythonBackend()) {
+      const { noteType, note, ...rest } = subscriberData;
+      const payload: Record<string, unknown> = { ...rest };
+      if (noteType != null) payload.note_type = noteType;
+      if (noteType === SubscriberNoteType.Other) {
+        const localNote = (note ?? '').trim();
+        if (localNote) payload.local_note = localNote;
+      }
+      const response: AxiosResponse<Record<string, unknown>> = await this.api.post(
+        '/subscribers',
+        payload
+      );
+      const row = (response.data?.subscriber ?? response.data) as Record<string, unknown>;
+      return this.mapSasRowToSubscriber(row, null);
+    }
     const response: AxiosResponse<Subscriber> = await this.api.post('/subscribers', subscriberData);
     return response.data;
   }
@@ -3059,7 +3133,6 @@ class ApiService {
         isActive: subscriberData.isActive,
         zone: subscriberData.zone,
         fat: subscriberData.fat,
-        note: subscriberData.note,
       };
       if (subscriberData.password?.trim()) {
         payload.password = subscriberData.password.trim();
@@ -3071,17 +3144,44 @@ class ApiService {
   }
 
   /**
-   * PATCH /subscribers/{id}/notes — تحديث ملاحظات المشترك (SubscriberNotesPatchDto).
-   * لا تُرسل إلا الحقول التي تغيّرت؛ انظر buildSubscriberNotesPatch.
+   * PATCH /api/subscribers/{id}/notes — حفظ note_type و local_note محلياً (بدون SAS).
    */
+  /** PATCH /api/subscribers/{sas_user_id}/notes — ملاحظة محلية */
   async patchSubscriberNotes(id: string, patch: SubscriberNotesPatchDto): Promise<Subscriber> {
     const body: Record<string, unknown> = {};
-    if (patch.noteType !== undefined) body.noteType = patch.noteType;
-    if (patch.clearNoteType === true) body.clearNoteType = true;
-    if (patch.note !== undefined) body.note = patch.note;
-    if (patch.clearNote === true) body.clearNote = true;
+    if (patch.noteType !== undefined) {
+      body.noteType = patch.noteType;
+      if (isPythonBackend()) body.note_type = patch.noteType;
+    }
+    if (patch.clearNoteType === true) {
+      body.clearNoteType = true;
+      if (isPythonBackend()) body.clear_note_type = true;
+    }
+    if (patch.note !== undefined) {
+      body.note = patch.note;
+      if (isPythonBackend()) body.local_note = patch.note;
+    }
+    if (patch.clearNote === true) {
+      body.clearNote = true;
+      if (isPythonBackend()) body.clear_local_note = true;
+    }
     const response: AxiosResponse<Subscriber> = await this.api.patch(`/subscribers/${id}/notes`, body);
+    if (isPythonBackend()) {
+      const payload = response.data as unknown as Record<string, unknown>;
+      const row = (payload.subscriber ?? payload) as Record<string, unknown>;
+      return this.mapSasRowToSubscriber(row, null);
+    }
     return response.data;
+  }
+
+  /** GET /api/subscribers/{id}/has-debt — ديون غير مسدّدة */
+  async getSubscriberHasDebt(id: string): Promise<{ hasDebt: boolean }> {
+    const response = await this.api.get<{ hasDebt?: boolean; has_debt?: boolean }>(
+      `/subscribers/${id}/has-debt`
+    );
+    const raw = response.data ?? {};
+    const hasDebt = raw.hasDebt === true || raw.has_debt === true;
+    return { hasDebt };
   }
 
   async deleteSubscriber(id: string): Promise<void> {
