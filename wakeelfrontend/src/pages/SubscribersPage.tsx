@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { apiService, ApiService, defaultSubscriberNoteTypeOptions } from '../services/api';
+import { apiService, ApiService } from '../services/api';
 import {
   clearCachedSubscribers,
   fetchSubscribersWithCache,
@@ -909,11 +909,6 @@ const SubscribersPage: React.FC = () => {
     () => renewalSubscriberContext?.dealers ?? [],
     [renewalSubscriberContext?.dealers]
   );
-  const renewalSubscriberNoteTypes = React.useMemo(() => {
-    const fromApi = renewalSubscriberContext?.subscriberNoteTypes;
-    if (fromApi && fromApi.length > 0) return fromApi;
-    return defaultSubscriberNoteTypeOptions();
-  }, [renewalSubscriberContext?.subscriberNoteTypes]);
 
   useEffect(() => {
     if ((renewalData.activationMode ?? RenewalActivationMode.Full) !== RenewalActivationMode.OtherDealer) return;
@@ -1790,22 +1785,6 @@ const SubscribersPage: React.FC = () => {
         showSuccess('تم الحفظ محلياً', 'سيتم رفع التجديد عند عودة الاتصال');
         await refreshPendingCount();
       }
-      if (!isOfflineQueued) {
-        const pickedNoteType = renewalData?.subscriberNoteType;
-        if (pickedNoteType != null && Number.isFinite(Number(pickedNoteType))) {
-          try {
-            await apiService.patchSubscriberNotes(renewalData.subscriberId, {
-              noteType: Number(pickedNoteType),
-            });
-          } catch (patchErr) {
-            // لا نلغي نجاح التفعيل إذا فشل تحديث نوع الملاحظة؛ نعرض تنبيه فقط.
-            showError(
-              'تنبيه بعد التفعيل',
-              `تم التفعيل لكن تعذر حفظ نوع الملاحظة: ${ApiService.showError(patchErr)}`
-            );
-          }
-        }
-      }
       console.log('Receipt data received from backend:', receiptData);
       console.log('Receipt number in received data:', receiptData?.receiptNumber);
 
@@ -2069,23 +2048,6 @@ const SubscribersPage: React.FC = () => {
       const pkg = selectedActivatePackage;
       const price = pythonPackagePrice;
       const paidAmount = renewalData.amountPaid;
-      const pickedNoteType = renewalData.subscriberNoteType;
-
-      if (
-        !res.debt_created &&
-        pickedNoteType != null &&
-        Number.isFinite(Number(pickedNoteType)) &&
-        sub?.id
-      ) {
-        try {
-          await apiService.patchSubscriberNotes(sub.id, { noteType: Number(pickedNoteType) });
-        } catch (patchErr) {
-          showError(
-            'تنبيه بعد التفعيل',
-            `تم التفعيل لكن تعذر حفظ نوع الملاحظة: ${ApiService.showError(patchErr)}`
-          );
-        }
-      }
 
       void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
       void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
@@ -4572,40 +4534,6 @@ const SubscribersPage: React.FC = () => {
                     />
                   )}
 
-                  {isPythonBackend() && pythonActivateResellerId && pythonActivateStep === 2 && (
-                    <div className="max-w-md mx-auto space-y-3">
-                      <div>
-                        <label className="block text-sm text-gray-600 dark:text-gray-400">
-                          نوع الملاحظة <span className="text-gray-400 font-normal">(اختياري — محلي)</span>
-                        </label>
-                        <select
-                        value={
-                          renewalData.subscriberNoteType != null &&
-                          Number.isFinite(renewalData.subscriberNoteType)
-                            ? String(renewalData.subscriberNoteType)
-                            : ''
-                        }
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setRenewalData((p) => ({
-                            ...p,
-                            subscriberNoteType: v === '' ? null : parseInt(v, 10),
-                          }));
-                        }}
-                        disabled={pythonActivateBusy}
-                        className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white disabled:opacity-60"
-                      >
-                        <option value="">— بدون —</option>
-                        {subscriberNoteTypeFilterOptions.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                      </div>
-                    </div>
-                  )}
-
                   {!isPythonBackend() && (
                   <>
                   <section className="rounded-xl border border-gray-200/90 dark:border-gray-600/70 overflow-hidden bg-white/60 dark:bg-gray-800/30">
@@ -4904,44 +4832,6 @@ const SubscribersPage: React.FC = () => {
                           />
                         </div>
                       )}
-                      <div className="space-y-2">
-                        <div className="flex flex-col sm:flex-row sm:items-end gap-2 sm:gap-3">
-                          <div className="flex-1 min-w-0">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                              جهة المبلغ الواصل
-                            </label>
-                            <select
-                              value={
-                                renewalData.subscriberNoteType != null && Number.isFinite(renewalData.subscriberNoteType)
-                                  ? String(renewalData.subscriberNoteType)
-                                  : ''
-                              }
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                setRenewalData((p) => ({
-                                  ...p,
-                                  subscriberNoteType: v === '' ? null : parseInt(v, 10),
-                                }));
-                              }}
-                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white"
-                            >
-                              <option value="">— اختر —</option>
-                              {renewalSubscriberNoteTypes.map((opt, idx) => (
-                                <option key={`${opt.value}-${idx}`} value={opt.value}>
-                                  {opt.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => renewalGeneralNotesTextareaRef.current?.focus()}
-                            className="shrink-0 px-4 py-2 text-sm font-medium rounded-lg border border-primary-600 text-primary-700 bg-primary-50 hover:bg-primary-100 dark:border-primary-500 dark:text-primary-200 dark:bg-primary-950/40 dark:hover:bg-primary-900/50 transition-colors"
-                          >
-                            إدخال ملاحظة
-                          </button>
-                        </div>
-                      </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">ملاحظات عامة</label>
                         <textarea
