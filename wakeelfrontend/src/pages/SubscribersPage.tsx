@@ -110,6 +110,8 @@ import {
   ArrowUp,
   ArrowDown,
   CalendarPlus,
+  Columns3,
+  GripVertical,
 } from 'lucide-react';
 
 const SUBSCRIBERS_TABLE_COLUMNS: { id: string; label: string }[] = [
@@ -216,6 +218,7 @@ function normalizeEarthlinkActivationUrl(url: string | undefined): string | unde
 // (SAS Python activation) تم تعليقها مؤقتاً — لا يتم تنفيذ أي منطق هنا حالياً.
 
 const STORAGE_KEY_VISIBLE_COLUMNS = 'wakeel_subscribers_visible_columns';
+const STORAGE_KEY_COLUMN_ORDER = 'wakeel_subscribers_column_order';
 
 const REGION_BADGE_COLORS = [
   'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200 border-blue-200 dark:border-blue-700',
@@ -310,6 +313,30 @@ function loadVisibleColumns(): Record<string, boolean> {
     }
   } catch (_) {}
   return getDefaultVisibleColumns();
+}
+
+function getDefaultColumnOrder(): string[] {
+  return SUBSCRIBERS_TABLE_COLUMNS.map((col) => col.id);
+}
+
+function mergeColumnOrder(saved: string[]): string[] {
+  const defaults = getDefaultColumnOrder();
+  const valid = saved.filter((id) => defaults.includes(id));
+  const missing = defaults.filter((id) => !valid.includes(id));
+  return [...valid, ...missing];
+}
+
+function loadColumnOrder(): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_COLUMN_ORDER);
+    if (raw) {
+      const parsed = JSON.parse(raw) as string[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return mergeColumnOrder(parsed);
+      }
+    }
+  } catch (_) {}
+  return getDefaultColumnOrder();
 }
 
 /** Card / Wallet وغيرها — للجدول الرئيسي ومزامنة المعاملات */
@@ -548,7 +575,10 @@ const SubscribersPage: React.FC = () => {
   }, [pythonSubscriberNoteTypes]);
 
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => loadVisibleColumns());
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => loadColumnOrder());
   const [showColumnSettings, setShowColumnSettings] = useState(false);
+  const [showColumnOrderModal, setShowColumnOrderModal] = useState(false);
+  const [columnOrderDraft, setColumnOrderDraft] = useState<string[]>([]);
   const [selectedOperationalResellerId, setSelectedOperationalResellerId] = useState<string>('');
   /**
    * حد أقصى لعدد المشتركين في طلب مقارنة Zain Fi² / FiberX.
@@ -584,6 +614,47 @@ const SubscribersPage: React.FC = () => {
   };
 
   const col = (id: string) => (visibleColumns[id] !== false ? '' : 'hidden');
+
+  const orderedTableColumns = useMemo(() => {
+    const byId = new Map(SUBSCRIBERS_TABLE_COLUMNS.map((c) => [c.id, c]));
+    return columnOrder
+      .map((id) => byId.get(id))
+      .filter((c): c is (typeof SUBSCRIBERS_TABLE_COLUMNS)[number] => !!c);
+  }, [columnOrder]);
+
+  const columnLabelById = useMemo(
+    () => new Map(SUBSCRIBERS_TABLE_COLUMNS.map((c) => [c.id, c.label])),
+    []
+  );
+
+  const openColumnOrderModal = () => {
+    setColumnOrderDraft([...columnOrder]);
+    setShowColumnOrderModal(true);
+    setShowColumnSettings(false);
+  };
+
+  const moveColumnInDraft = (index: number, direction: -1 | 1) => {
+    setColumnOrderDraft((prev) => {
+      const target = index + direction;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
+
+  const saveColumnOrder = () => {
+    const next = mergeColumnOrder(columnOrderDraft);
+    setColumnOrder(next);
+    try {
+      localStorage.setItem(STORAGE_KEY_COLUMN_ORDER, JSON.stringify(next));
+    } catch (_) {}
+    setShowColumnOrderModal(false);
+  };
+
+  const resetColumnOrderDraft = () => {
+    setColumnOrderDraft(getDefaultColumnOrder());
+  };
 
   const getSubscriberRegion = (subscriber: Subscriber): { name: string; badgeClass: string } => {
     const byName = (subscriber.agentResellerName ?? '').trim();
@@ -2312,6 +2383,157 @@ const SubscribersPage: React.FC = () => {
     );
   };
 
+  const renderSubscriberTableCell = (subscriber: Subscriber, columnId: string) => {
+    const cellBase = `px-2 sm:px-4 lg:px-6 py-2 sm:py-4 ${col(columnId)}`;
+
+    switch (columnId) {
+      case 'secruptionId':
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap`}>
+            <div className="text-xs sm:text-sm font-medium text-gray-900 dark:text-white font-mono">
+              {subscriber.id || subscriber.secruptionId || '—'}
+            </div>
+          </td>
+        );
+      case 'subscriber':
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap`}>
+            <div className="flex items-center">
+              <div className="flex-shrink-0 h-8 w-8 sm:h-10 sm:w-10">
+                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center">
+                  <span className="text-primary-600 dark:text-primary-400 text-xs sm:text-sm font-semibold">
+                    {subscriber.firstName.charAt(0)}
+                  </span>
+                </div>
+              </div>
+              <div className="mr-2 sm:mr-4">
+                <div className="text-xs sm:text-sm font-medium text-gray-900 dark:text-white">
+                  {subscriber.fullName}
+                </div>
+              </div>
+            </div>
+          </td>
+        );
+      case 'username':
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
+            {subscriber.username}
+          </td>
+        );
+      case 'subscriberRegion': {
+        const region = getSubscriberRegion(subscriber);
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap`}>
+            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold border ${region.badgeClass}`}>
+              {region.name}
+            </span>
+          </td>
+        );
+      }
+      case 'phoneNumber':
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
+            <span className="flex items-center">
+              <Phone className="h-3 w-3 mr-1 text-gray-400 flex-shrink-0" />
+              {subscriber.phoneNumber}
+            </span>
+          </td>
+        );
+      case 'zone':
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
+            {subscriber.zone ?? '—'}
+          </td>
+        );
+      case 'noteType':
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
+            {getSubscriberNoteTypeBadge(subscriber.noteType, subscriber.note ?? null)}
+          </td>
+        );
+      case 'note': {
+        const localNote = getSubscriberLocalNote(subscriber);
+        return (
+          <td key={columnId} className={`${cellBase} text-xs sm:text-sm text-gray-900 dark:text-white`}>
+            <div className="max-w-[180px] sm:max-w-[240px] truncate" title={localNote}>
+              {localNote || '—'}
+            </div>
+          </td>
+        );
+      }
+      case 'profile':
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
+            {subscriber.profileName}
+          </td>
+        );
+      case 'paymentMethod':
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
+            {formatPaymentMethodLabel(subscriber.paymentMethod)}
+          </td>
+        );
+      case 'activationDate':
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
+            {formatDate(subscriber.activationDate, { year: 'numeric', month: 'numeric', day: 'numeric' })}
+          </td>
+        );
+      case 'expirationDate':
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
+            {subscriber.expirationDate
+              ? formatDate(subscriber.expirationDate, { year: 'numeric', month: 'numeric', day: 'numeric' })
+              : 'غير محدد'}
+          </td>
+        );
+      case 'daysRemaining': {
+        const days =
+          subscriber.daysUntilExpiry ??
+          subscriberDaysRemaining(subscriber.activationDate, subscriber.expirationDate);
+        const period =
+          subscriber.activationDate && subscriber.expirationDate
+            ? calendarDaysBetween(subscriber.activationDate, subscriber.expirationDate)
+            : null;
+        const title =
+          period != null && period >= 0
+            ? `مدة الاشتراك: ${period} يوم (من التفعيل إلى الانتهاء)`
+            : undefined;
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm`}>
+            <span className={daysRemainingTextClass(days)} title={title}>
+              {formatDaysRemainingColumn(days)}
+            </span>
+          </td>
+        );
+      }
+      case 'status':
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap`}>
+            {getStatusBadge(subscriber)}
+          </td>
+        );
+      case 'hasDebt':
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm`}>
+            {subscriber.hasDebt === true ? (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200 border border-red-200 dark:border-red-800">
+                نعم
+              </span>
+            ) : subscriber.hasDebt === false ? (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800">
+                لا
+              </span>
+            ) : (
+              '—'
+            )}
+          </td>
+        );
+      default:
+        return null;
+    }
+  };
+
   const _handleDelete = async (id: string) => {
     const confirmed = await confirmDelete('مشترك');
     if (confirmed) {
@@ -3857,8 +4079,17 @@ const SubscribersPage: React.FC = () => {
 
       {/* Table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div className="flex items-center justify-end px-3 py-2 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-end gap-1 px-3 py-2 border-b border-gray-200 dark:border-gray-700">
           <div className="relative" ref={columnSettingsRef}>
+            <button
+              type="button"
+              onClick={openColumnOrderModal}
+              className="p-2 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+              title="ترتيب الأعمدة"
+              aria-label="ترتيب الأعمدة"
+            >
+              <Columns3 className="h-5 w-5" />
+            </button>
             <button
               type="button"
               onClick={() => setShowColumnSettings((v) => !v)}
@@ -3874,7 +4105,7 @@ const SubscribersPage: React.FC = () => {
                   <span className="text-sm font-medium text-gray-900 dark:text-white">الأعمدة الظاهرة</span>
                 </div>
                 <div className="max-h-64 overflow-y-auto px-2 py-1">
-                  {SUBSCRIBERS_TABLE_COLUMNS.map(({ id, label }) => (
+                  {orderedTableColumns.map(({ id, label }) => (
                     <label
                       key={id}
                       className="flex items-center gap-2 px-2 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
@@ -3898,15 +4129,26 @@ const SubscribersPage: React.FC = () => {
             <thead>
               <tr>
                 <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3">
-                  <button onClick={toggleSelectAll} className="p-1" aria-label="تحديد الكل">
-                    {subscribers && selectedIds.length === subscribers.length && subscribers.length > 0 ? (
-                      <CheckSquare className="h-3 w-3 sm:h-4 sm:w-4 text-primary-600" />
-                    ) : (
-                      <Square className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400" />
-                    )}
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button onClick={toggleSelectAll} className="p-1" aria-label="تحديد الكل">
+                      {subscribers && selectedIds.length === subscribers.length && subscribers.length > 0 ? (
+                        <CheckSquare className="h-3 w-3 sm:h-4 sm:w-4 text-primary-600" />
+                      ) : (
+                        <Square className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openColumnOrderModal}
+                      className="p-1 rounded text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      title="ترتيب الأعمدة"
+                      aria-label="ترتيب الأعمدة"
+                    >
+                      <Columns3 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    </button>
+                  </div>
                 </th>
-                {SUBSCRIBERS_TABLE_COLUMNS.map(({ id, label }) => {
+                {orderedTableColumns.map(({ id, label }) => {
                   const isActive = sortColumn === id;
                   const SortIcon = isActive ? (sortDescending ? ArrowDown : ArrowUp) : null;
                   const headerLabel =
@@ -3951,121 +4193,7 @@ const SubscribersPage: React.FC = () => {
                       )}
                     </button>
                   </td>
-                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap ${col('secruptionId')}`}>
-                    <div className="text-xs sm:text-sm font-medium text-gray-900 dark:text-white font-mono">
-                      {subscriber.id || subscriber.secruptionId || '—'}
-                    </div>
-                  </td>
-                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap ${col('subscriber')}`}>
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 h-8 w-8 sm:h-10 sm:w-10">
-                        <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-primary-100 dark:bg-primary-900 flex items-center justify-center">
-                          <span className="text-primary-600 dark:text-primary-400 text-xs sm:text-sm font-semibold">
-                            {subscriber.firstName.charAt(0)}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="mr-2 sm:mr-4">
-                        <div className="text-xs sm:text-sm font-medium text-gray-900 dark:text-white">
-                          {subscriber.fullName}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white ${col('username')}`}>
-                    {subscriber.username}
-                  </td>
-                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap ${col('subscriberRegion')}`}>
-                    {(() => {
-                      const region = getSubscriberRegion(subscriber);
-                      return (
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold border ${region.badgeClass}`}>
-                          {region.name}
-                        </span>
-                      );
-                    })()}
-                  </td>
-                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white ${col('phoneNumber')}`}>
-                    <span className="flex items-center">
-                      <Phone className="h-3 w-3 mr-1 text-gray-400 flex-shrink-0" />
-                      {subscriber.phoneNumber}
-                    </span>
-                  </td>
-                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white ${col('zone')}`}>
-                    {subscriber.zone ?? '—'}
-                  </td>
-                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white ${col('noteType')}`}>
-                    {getSubscriberNoteTypeBadge(subscriber.noteType, subscriber.note ?? null)}
-                  </td>
-                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 text-xs sm:text-sm text-gray-900 dark:text-white ${col('note')}`}>
-                    {(() => {
-                      const localNote = getSubscriberLocalNote(subscriber);
-                      return (
-                    <div
-                      className="max-w-[180px] sm:max-w-[240px] truncate"
-                      title={localNote}
-                    >
-                      {localNote || '—'}
-                    </div>
-                      );
-                    })()}
-                  </td>
-                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white ${col('profile')}`}>
-                    {subscriber.profileName}
-                  </td>
-                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white ${col('paymentMethod')}`}>
-                    {formatPaymentMethodLabel(subscriber.paymentMethod)}
-                  </td>
-                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white ${col('activationDate')}`}>
-                    {formatDate(subscriber.activationDate, { year: 'numeric', month: 'numeric', day: 'numeric' })}
-                  </td>
-                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white ${col('expirationDate')}`}>
-                    {subscriber.expirationDate
-                      ? formatDate(subscriber.expirationDate, { year: 'numeric', month: 'numeric', day: 'numeric' })
-                      : 'غير محدد'}
-                  </td>
-                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap text-xs sm:text-sm ${col('daysRemaining')}`}>
-                    {(() => {
-                      const days =
-                        subscriber.daysUntilExpiry ??
-                        subscriberDaysRemaining(
-                          subscriber.activationDate,
-                          subscriber.expirationDate
-                        );
-                      const period =
-                        subscriber.activationDate && subscriber.expirationDate
-                          ? calendarDaysBetween(
-                              subscriber.activationDate,
-                              subscriber.expirationDate
-                            )
-                          : null;
-                      const title =
-                        period != null && period >= 0
-                          ? `مدة الاشتراك: ${period} يوم (من التفعيل إلى الانتهاء)`
-                          : undefined;
-                      return (
-                        <span className={daysRemainingTextClass(days)} title={title}>
-                          {formatDaysRemainingColumn(days)}
-                        </span>
-                      );
-                    })()}
-                  </td>
-                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap ${col('status')}`}>
-                    {getStatusBadge(subscriber)}
-                  </td>
-                  <td className={`px-2 sm:px-4 lg:px-6 py-2 sm:py-4 whitespace-nowrap text-xs sm:text-sm ${col('hasDebt')}`}>
-                    {subscriber.hasDebt === true ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200 border border-red-200 dark:border-red-800">
-                        نعم
-                      </span>
-                    ) : subscriber.hasDebt === false ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800">
-                        لا
-                      </span>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
+                  {orderedTableColumns.map(({ id }) => renderSubscriberTableCell(subscriber, id))}
                 </tr>
               ))}
             </tbody>
@@ -5835,6 +5963,102 @@ const SubscribersPage: React.FC = () => {
           }}
         />
       ) : null}
+
+      {showColumnOrderModal && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="column-order-modal-title"
+        >
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200/90 dark:border-gray-700 w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <Columns3 className="h-5 w-5 text-primary-600 dark:text-primary-400 shrink-0" />
+                <h2
+                  id="column-order-modal-title"
+                  className="text-lg font-bold text-gray-900 dark:text-white truncate"
+                >
+                  ترتيب أعمدة الجدول
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowColumnOrderModal(false)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+                aria-label="إغلاق"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="px-5 pt-3 text-sm text-gray-500 dark:text-gray-400">
+              استخدم الأسهم لتحريك الأعمدة. يُحفظ الترتيب تلقائياً على هذا الجهاز.
+            </p>
+            <div className="px-3 py-3 overflow-y-auto flex-1">
+              <ul className="space-y-1">
+                {columnOrderDraft.map((id, index) => (
+                  <li
+                    key={id}
+                    className="flex items-center gap-2 px-2 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50/80 dark:bg-gray-900/30"
+                  >
+                    <GripVertical className="h-4 w-4 text-gray-400 shrink-0" aria-hidden />
+                    <span className="flex-1 text-sm text-gray-800 dark:text-gray-200 truncate">
+                      {columnLabelById.get(id) ?? id}
+                    </span>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => moveColumnInDraft(index, -1)}
+                        disabled={index === 0}
+                        className="p-1.5 rounded-md text-gray-500 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        title="تحريك لأعلى"
+                        aria-label={`تحريك ${columnLabelById.get(id) ?? id} لأعلى`}
+                      >
+                        <ArrowUp className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveColumnInDraft(index, 1)}
+                        disabled={index === columnOrderDraft.length - 1}
+                        className="p-1.5 rounded-md text-gray-500 hover:bg-white dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        title="تحريك لأسفل"
+                        aria-label={`تحريك ${columnLabelById.get(id) ?? id} لأسفل`}
+                      >
+                        <ArrowDown className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 px-5 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/90 dark:bg-gray-900/40 shrink-0">
+              <button
+                type="button"
+                onClick={resetColumnOrderDraft}
+                className="w-full sm:w-auto px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
+              >
+                إعادة الترتيب الافتراضي
+              </button>
+              <div className="flex flex-col-reverse sm:flex-row gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowColumnOrderModal(false)}
+                  className="w-full sm:w-auto px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={saveColumnOrder}
+                  className="w-full sm:w-auto px-5 py-2.5 text-sm font-semibold rounded-xl bg-primary-600 hover:bg-primary-700 text-white shadow-md transition-colors"
+                >
+                  حفظ الترتيب
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Note Modal */}
       {selectedSubscriberForNote && (
