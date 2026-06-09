@@ -4,7 +4,7 @@ import type { SubscriberNoteType } from '../types';
 function normNoteType(t: SubscriberNoteType | null | undefined): number | null {
   if (t === null || t === undefined) return null;
   const n = Number(t);
-  if (n >= 1 && n <= 5) return n;
+  if (Number.isFinite(n) && n > 0) return n;
   return null;
 }
 

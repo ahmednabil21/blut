@@ -2594,6 +2594,10 @@ export type AccountLedgerPackageType = 1 | 2 | 3;
 export interface SubscriberNoteTypeOption {
   value: number;
   label: string;
+  /** عند true يُطلب نص حر في الملاحظة */
+  requiresNoteText?: boolean;
+  sortOrder?: number;
+  isActive?: boolean;
 }
 
 export interface AccountLedgerEntry {

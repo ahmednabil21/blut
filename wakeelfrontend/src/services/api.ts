@@ -245,6 +245,7 @@ export function defaultSubscriberNoteTypeOptions(): SubscriberNoteTypeOption[] {
   return [1, 2, 3, 4, 5].map((v) => ({
     value: v,
     label: subscriberNoteTypeLabelAr(v) ?? String(v),
+    requiresNoteText: v === 5,
   }));
 }
 
@@ -312,7 +313,22 @@ export function parseSubscriberNoteTypesCatalog(raw: unknown): SubscriberNoteTyp
     if (!ls) continue;
     if (seen.has(vn)) continue;
     seen.add(vn);
-    out.push({ value: vn, label: ls });
+    const requiresNoteText =
+      o.requiresNoteText === true ||
+      o.requires_note_text === true ||
+      o.requiresNoteText === 1 ||
+      o.requires_note_text === 1;
+    const sortOrderRaw = o.sortOrder ?? o.sort_order ?? o.SortOrder;
+    const sortOrder =
+      sortOrderRaw != null && Number.isFinite(Number(sortOrderRaw))
+        ? Number(sortOrderRaw)
+        : undefined;
+    const isActiveRaw = o.isActive ?? o.is_active ?? o.IsActive;
+    const isActive =
+      isActiveRaw === undefined || isActiveRaw === null
+        ? true
+        : isActiveRaw === true || isActiveRaw === 1 || isActiveRaw === '1';
+    out.push({ value: vn, label: ls, requiresNoteText, sortOrder, isActive });
   }
   return out;
 }
@@ -2163,7 +2179,7 @@ class ApiService {
         ? Number(noteTypeRaw)
         : undefined;
     const noteType =
-      noteTypeNum != null && noteTypeNum >= 1 && noteTypeNum <= 5
+      noteTypeNum != null && Number.isFinite(noteTypeNum)
         ? (noteTypeNum as SubscriberNoteType)
         : undefined;
     const localNoteRaw = row.local_note ?? row.localNote ?? row.note;
@@ -2767,11 +2783,17 @@ class ApiService {
     return response.data;
   }
 
-  /** GET /api/subscribers/note-types — قائمة ثابتة 1–5 */
-  async getPythonSubscriberNoteTypes(): Promise<SubscriberNoteTypeOption[]> {
+  /** GET /api/subscribers/note-types — قائمة ديناميكية من قاعدة البيانات */
+  async getPythonSubscriberNoteTypes(
+    options?: { includeInactive?: boolean }
+  ): Promise<SubscriberNoteTypeOption[]> {
     if (!isPythonBackend()) return defaultSubscriberNoteTypeOptions();
     try {
-      const response = await this.api.get<Record<string, unknown>>('/subscribers/note-types');
+      const params =
+        options?.includeInactive === true ? { include_inactive: true } : undefined;
+      const response = await this.api.get<Record<string, unknown>>('/subscribers/note-types', {
+        params,
+      });
       const body = response.data ?? {};
       const raw =
         body.types ??
@@ -2779,12 +2801,48 @@ class ApiService {
         body.items ??
         body.note_types ??
         body.noteTypes ??
+        body.subscriberNoteTypes ??
         body;
       const parsed = parseSubscriberNoteTypesCatalog(raw);
       return parsed.length > 0 ? parsed : defaultSubscriberNoteTypeOptions();
     } catch {
       return defaultSubscriberNoteTypeOptions();
     }
+  }
+
+  async createSubscriberNoteType(payload: {
+    label: string;
+    requiresNoteText?: boolean;
+    sortOrder?: number;
+  }): Promise<SubscriberNoteTypeOption> {
+    const response = await this.api.post<Record<string, unknown>>('/subscribers/note-types', {
+      label: payload.label,
+      requiresNoteText: !!payload.requiresNoteText,
+      sortOrder: payload.sortOrder,
+    });
+    const parsed = parseSubscriberNoteTypesCatalog([response.data ?? {}]);
+    return parsed[0] ?? { value: Number(response.data?.value ?? 0), label: payload.label };
+  }
+
+  async updateSubscriberNoteType(
+    id: number,
+    payload: {
+      label?: string;
+      requiresNoteText?: boolean;
+      sortOrder?: number;
+      isActive?: boolean;
+    }
+  ): Promise<SubscriberNoteTypeOption> {
+    const response = await this.api.put<Record<string, unknown>>(
+      `/subscribers/note-types/${id}`,
+      payload
+    );
+    const parsed = parseSubscriberNoteTypesCatalog([response.data ?? {}]);
+    return parsed[0] ?? { value: id, label: payload.label ?? '' };
+  }
+
+  async deleteSubscriberNoteType(id: number): Promise<void> {
+    await this.api.delete(`/subscribers/note-types/${id}`);
   }
 
   /** GET /api/subscribers/subscription-statuses — حالات الاشتراك (Python) */

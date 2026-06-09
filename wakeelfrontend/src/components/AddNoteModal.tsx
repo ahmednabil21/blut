@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save } from 'lucide-react';
-import { Subscriber, SubscriberNoteType } from '../types';
+import { Subscriber, SubscriberNoteType, SubscriberNoteTypeOption } from '../types';
+import {
+  labelFromSubscriberNoteTypeCatalog,
+  noteTypeRequiresFreeText,
+} from '../utils/subscriberNoteTypeCatalog';
 
 interface AddNoteModalProps {
   isOpen: boolean;
   onClose: () => void;
   subscriber: Subscriber;
+  noteTypeOptions?: SubscriberNoteTypeOption[];
   onSave: (id: string, noteType: SubscriberNoteType | null, note: string) => Promise<void>;
 }
 
@@ -13,12 +18,16 @@ const AddNoteModal: React.FC<AddNoteModalProps> = ({
   isOpen,
   onClose,
   subscriber,
-  onSave
+  noteTypeOptions = [],
+  onSave,
 }) => {
-  const [noteType, setNoteType] = useState<SubscriberNoteType | null>(
+  const defaultType =
     subscriber.noteType ??
-    (((subscriber.note || '').toString().trim().length > 0) ? SubscriberNoteType.Other : SubscriberNoteType.NoResponse)
-  );
+    (((subscriber.note || '').toString().trim().length > 0)
+      ? SubscriberNoteType.Other
+      : (noteTypeOptions[0]?.value as SubscriberNoteType | undefined) ?? SubscriberNoteType.NoResponse);
+
+  const [noteType, setNoteType] = useState<SubscriberNoteType | null>(defaultType);
   const [note, setNote] = useState(subscriber.note || '');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -26,28 +35,36 @@ const AddNoteModal: React.FC<AddNoteModalProps> = ({
     if (isOpen) {
       setNoteType(
         subscriber.noteType ??
-        (((subscriber.note || '').toString().trim().length > 0) ? SubscriberNoteType.Other : SubscriberNoteType.NoResponse)
+        (((subscriber.note || '').toString().trim().length > 0)
+          ? SubscriberNoteType.Other
+          : (noteTypeOptions[0]?.value as SubscriberNoteType | undefined) ?? SubscriberNoteType.NoResponse)
       );
       setNote(subscriber.note || '');
     }
-  }, [isOpen, subscriber]);
+  }, [isOpen, subscriber, noteTypeOptions]);
+
+  const requiresText = noteTypeRequiresFreeText(noteType, noteTypeOptions);
 
   const handleNoteTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     const next = val === '' ? null : (parseInt(val, 10) as SubscriberNoteType);
     setNoteType(next);
-    if (next !== SubscriberNoteType.Other) setNote('');
+    if (!noteTypeRequiresFreeText(next, noteTypeOptions)) setNote('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (noteType === SubscriberNoteType.Other) {
+    if (noteTypeRequiresFreeText(noteType, noteTypeOptions)) {
       const trimmed = (note || '').toString().trim();
       if (!trimmed) return;
     }
     setIsSaving(true);
     try {
-      await onSave(subscriber.id, noteType, noteType === SubscriberNoteType.Other ? (note || '').trim() : '');
+      await onSave(
+        subscriber.id,
+        noteType,
+        noteTypeRequiresFreeText(noteType, noteTypeOptions) ? (note || '').trim() : ''
+      );
       onClose();
     } finally {
       setIsSaving(false);
@@ -56,17 +73,29 @@ const AddNoteModal: React.FC<AddNoteModalProps> = ({
 
   if (!isOpen) return null;
 
+  const options =
+    noteTypeOptions.length > 0
+      ? noteTypeOptions.filter((o) => o.isActive !== false)
+      : [
+          { value: SubscriberNoteType.NoResponse, label: 'لم يتم الرد' },
+          { value: SubscriberNoteType.DoesNotWantActivation, label: 'لايرغب بالتفعيل' },
+          { value: SubscriberNoteType.MaintenanceRequest, label: 'طلب صيانة' },
+          { value: SubscriberNoteType.StableService, label: 'الخدمة مستقرة' },
+          { value: SubscriberNoteType.Other, label: 'أخرى', requiresNoteText: true },
+        ];
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
         <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              ادخال ملاحظة
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              {subscriber.fullName}
-            </p>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">ادخال ملاحظة</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{subscriber.fullName}</p>
+            {noteType != null && (
+              <p className="text-xs text-gray-500 dark:text-gray-500 mt-0.5">
+                {labelFromSubscriberNoteTypeCatalog(noteType, noteTypeOptions, note)}
+              </p>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -86,15 +115,15 @@ const AddNoteModal: React.FC<AddNoteModalProps> = ({
               onChange={handleNoteTypeChange}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white"
             >
-              <option value={SubscriberNoteType.NoResponse}>لم يتم الرد</option>
-              <option value={SubscriberNoteType.DoesNotWantActivation}>لايرغب بالتفعيل</option>
-              <option value={SubscriberNoteType.MaintenanceRequest}>طلب صيانة</option>
-              <option value={SubscriberNoteType.StableService}>الخدمة مستقرة</option>
-              <option value={SubscriberNoteType.Other}>أخرى</option>
+              {options.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
           </div>
 
-          {noteType === SubscriberNoteType.Other && (
+          {requiresText && (
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 نص الملاحظة
@@ -120,7 +149,7 @@ const AddNoteModal: React.FC<AddNoteModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSaving || (noteType === SubscriberNoteType.Other && !(note || '').trim())}
+              disabled={isSaving || (requiresText && !(note || '').trim())}
               className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSaving ? (

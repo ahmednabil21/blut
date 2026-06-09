@@ -67,8 +67,10 @@ import {
   Sparkles,
   Search,
   Activity,
+  StickyNote,
 } from 'lucide-react';
 import { InvoicePrintTemplateSettings } from '../components/settings/InvoicePrintTemplateSettings';
+import SubscriberNoteTypesSettings from '../components/settings/SubscriberNoteTypesSettings';
 import {
   exportSasSubscribersViaPython,
   isSasPythonReseller,
@@ -498,7 +500,8 @@ function SettingsPage() {
     | 'sasAdminBrowserSync'
     | 'adminWhatsAppSessions'
     | 'subscriberApp'
-    | 'subscriberAnnouncement';
+    | 'subscriberAnnouncement'
+    | 'subscriberNoteTypes';
   const [activeSection, setActiveSection] = useState<SettingsSection>('profile');
   /** للأدمن: الوكيل المختار في شاشات قوالب الفواتير */
   const [invoicePrintAdminAgentId, setInvoicePrintAdminAgentId] = useState('');
@@ -2107,6 +2110,10 @@ function SettingsPage() {
             <PythonResellersSettings />
           )}
 
+          {isPythonBackend() && (isAgent || isAdmin) && activeSection === 'subscriberNoteTypes' && (
+            <SubscriberNoteTypesSettings />
+          )}
+
           {/* الرسيلرز والروابط — إدارة روابط SAS/FTTH/Earthlink (.NET) */}
           {isAgentOrSubAgent && activeSection === 'resellers' && !isPythonBackend() && (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
@@ -3484,6 +3491,20 @@ function SettingsPage() {
                 >
                   <MessageCircle className="h-5 w-5 flex-shrink-0" />
                   <span>جلسات واتساب (Admin)</span>
+                </button>
+              )}
+              {isPythonBackend() && (isAgent || isAdmin) && (
+                <button
+                  type="button"
+                  onClick={() => setActiveSection('subscriberNoteTypes')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 text-right rounded-lg transition-colors ${
+                    activeSection === 'subscriberNoteTypes'
+                      ? 'bg-primary-100 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
+                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <StickyNote className="h-5 w-5 flex-shrink-0" />
+                  <span>أنواع ملاحظات المشتركين</span>
                 </button>
               )}
               {isAgentOrSubAgent && (

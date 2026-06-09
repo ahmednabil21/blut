@@ -78,7 +78,12 @@ import {
 } from '../utils/activationReceiptPrintHtml';
 import { getBaghdadDefaultExportRangeLast30Days, getBaghdadRangeBoundsIso, getBaghdadTodayYmd } from '../utils/iraqCalendar';
 import { styleAccountsExportExcelBlob } from '../utils/excelExport';
-import { SUBSCRIBER_NOTE_TYPE_LABEL_AR, getSubscriberLocalNote } from '../utils/subscriberNoteTypeLabels';
+import { SUBSCRIBER_NOTE_TYPE_LABEL_AR } from '../utils/subscriberNoteTypeLabels';
+import {
+  labelFromSubscriberNoteTypeCatalog,
+  getSubscriberLocalNoteWithCatalog,
+  noteTypeRequiresFreeText,
+} from '../utils/subscriberNoteTypeCatalog';
 import EditSubscriberModal from '../components/EditSubscriberModal';
 import SasEditSubscriberModal from '../components/SasEditSubscriberModal';
 import AddNoteModal from '../components/AddNoteModal';
@@ -258,10 +263,12 @@ function profileNameIndicatesOtherDealerKeyword(name: string | undefined): boole
 //   process.env.REACT_APP_SAS_PYTHON_API_URL ||
 //   (process.env.NODE_ENV === 'production' ? 'https://api.execute-iq.com/apipy' : 'http://localhost:8000');
 
-function getSubscriberNoteTypeLabel(noteType?: SubscriberNoteType | null, note?: string | null): string {
-  const hasFreeNote = (note ?? '').toString().trim().length > 0;
-  if (!noteType) return hasFreeNote ? SUBSCRIBER_NOTE_TYPE_LABEL_AR[SubscriberNoteType.Other] : '—';
-  return SUBSCRIBER_NOTE_TYPE_LABEL_AR[noteType] ?? String(noteType);
+function getSubscriberNoteTypeLabel(
+  noteType?: SubscriberNoteType | null,
+  note?: string | null,
+  catalog?: { value: number; label: string }[]
+): string {
+  return labelFromSubscriberNoteTypeCatalog(noteType ?? null, catalog, note);
 }
 
 /** تاريخ Zain للتطبيق على المشترك؛ يفضّل externalEndDate ثم عمود الانتهاء المعروض */
@@ -272,8 +279,12 @@ function resolveZainfiApplyExternalEndDate(row: ZainfiSubscriberDiffItem): strin
   return exp || null;
 }
 
-function getSubscriberNoteTypeBadge(noteType?: SubscriberNoteType | null, note?: string | null) {
-  const label = getSubscriberNoteTypeLabel(noteType, note);
+function getSubscriberNoteTypeBadge(
+  noteType?: SubscriberNoteType | null,
+  note?: string | null,
+  catalog?: { value: number; label: string; requiresNoteText?: boolean }[]
+) {
+  const label = getSubscriberNoteTypeLabel(noteType, note, catalog);
   if (label === '—') return <span className="text-gray-400">—</span>;
 
   const normalizedType: SubscriberNoteType | null =
@@ -2454,11 +2465,11 @@ const SubscribersPage: React.FC = () => {
       case 'noteType':
         return (
           <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
-            {getSubscriberNoteTypeBadge(subscriber.noteType, subscriber.note ?? null)}
+            {getSubscriberNoteTypeBadge(subscriber.noteType, subscriber.note ?? null, subscriberNoteTypeFilterOptions)}
           </td>
         );
       case 'note': {
-        const localNote = getSubscriberLocalNote(subscriber);
+        const localNote = getSubscriberLocalNoteWithCatalog(subscriber, subscriberNoteTypeFilterOptions);
         return (
           <td key={columnId} className={`${cellBase} text-xs sm:text-sm text-gray-900 dark:text-white`}>
             <div className="max-w-[180px] sm:max-w-[240px] truncate" title={localNote}>
@@ -2586,7 +2597,7 @@ const SubscribersPage: React.FC = () => {
     if (data.note && data.note.length > 1000) {
       return 'الملاحظة يجب أن تكون أقل من 1000 حرف';
     }
-    if (data.noteType === SubscriberNoteType.Other) {
+    if (noteTypeRequiresFreeText(data.noteType, subscriberNoteTypeFilterOptions)) {
       const noteText = (data.note ?? '').toString().trim();
       if (!noteText) {
         return 'يرجى كتابة نص الملاحظة عند اختيار "أخرى"';
@@ -2623,7 +2634,9 @@ const SubscribersPage: React.FC = () => {
       ...formData,
       secruptionId: (formData.secruptionId ?? '').trim(),
       noteType,
-      note: noteType === SubscriberNoteType.Other ? (noteText || undefined) : undefined,
+      note: noteTypeRequiresFreeText(noteType, subscriberNoteTypeFilterOptions)
+        ? (noteText || undefined)
+        : undefined,
       agentResellerId: rid,
     };
     createSubscriberMutation.mutate(payload);
@@ -2638,7 +2651,7 @@ const SubscribersPage: React.FC = () => {
         return {
       ...prev,
           noteType: nextNoteType,
-          note: nextNoteType === SubscriberNoteType.Other ? prev.note : '',
+          note: noteTypeRequiresFreeText(nextNoteType, subscriberNoteTypeFilterOptions) ? prev.note : '',
         };
       }
       return {
@@ -3377,7 +3390,9 @@ const SubscribersPage: React.FC = () => {
 
   const handleSaveNote = async (id: string, noteType: SubscriberNoteType | null, note: string) => {
     const sub = selectedSubscriberForNote!;
-    const nextNotePlain = noteType === SubscriberNoteType.Other ? (note || '').trim() : '';
+    const nextNotePlain = noteTypeRequiresFreeText(noteType, pythonSubscriberNoteTypes)
+      ? (note || '').trim()
+      : '';
     const patch = buildSubscriberNotesPatch(
       { noteType: sub.noteType ?? null, note: sub.note ?? '' },
       { noteType, note: nextNotePlain }
@@ -4461,15 +4476,15 @@ const SubscribersPage: React.FC = () => {
                     onChange={handleInputChange}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-700 dark:text-white"
                   >
-                    <option value={SubscriberNoteType.NoResponse}>لم يتم الرد</option>
-                    <option value={SubscriberNoteType.DoesNotWantActivation}>لايرغب بالتفعيل</option>
-                    <option value={SubscriberNoteType.MaintenanceRequest}>طلب صيانة</option>
-                    <option value={SubscriberNoteType.StableService}>الخدمة مستقرة</option>
-                    <option value={SubscriberNoteType.Other}>أخرى</option>
+                    {subscriberNoteTypeFilterOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
-                {formData.noteType === SubscriberNoteType.Other && (
+                {noteTypeRequiresFreeText(formData.noteType, subscriberNoteTypeFilterOptions) && (
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       نص الملاحظة
@@ -6078,6 +6093,7 @@ const SubscribersPage: React.FC = () => {
             clearSubscriberSelection();
           }}
           subscriber={selectedSubscriberForNote}
+          noteTypeOptions={pythonSubscriberNoteTypes}
           onSave={handleSaveNote}
         />
       )}
