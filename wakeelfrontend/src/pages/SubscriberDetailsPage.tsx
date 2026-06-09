@@ -51,6 +51,7 @@ import { useMyAgent } from '../hooks/useMyAgent';
 import Pagination from '../components/Pagination';
 import { showSuccess, showError } from '../utils/notifications';
 import { SUBSCRIBER_NOTE_TYPE_LABEL_AR, getSubscriberLocalNote } from '../utils/subscriberNoteTypeLabels';
+import { formatSubscriberTableDateTime } from '../utils/formatDisplayDate';
 
 const RENEWAL_PAGE_SIZE = 10;
 const SESSIONS_PAGE_SIZE = 10;
@@ -197,7 +198,7 @@ const SubscriberDetailsPage: React.FC = () => {
   const { subscriberId } = useParams<{ subscriberId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { formatNumber, formatDate } = useDigits();
+  const { formatNumber, formatDate, locale } = useDigits();
   const needMyAgentForWhatsApp =
     user?.role === UserRole.Agent ||
     user?.role === UserRole.SubAgent ||
@@ -772,109 +773,12 @@ const SubscriberDetailsPage: React.FC = () => {
             </div>
           </section>
 
-          {/* 2 — سجل التفعيلات */}
-          <section className="scroll-mt-24">
-            <div className="flex items-center gap-3 mb-4">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 text-sm font-bold">
-                2
-              </span>
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">سجل التفعيلات</h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400">تجديدات الاشتراك والمدفوعات</p>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-gray-200/80 dark:border-gray-700/80 bg-white dark:bg-gray-900/40 shadow-sm overflow-hidden">
-              {renewalsBusy && renewalPage === 1 ? (
-                <div className="flex flex-col items-center py-16">
-                  <RefreshCw className="h-8 w-8 animate-spin text-amber-500 mb-2" />
-                  <p className="text-sm text-gray-500">جاري تحميل سجل التفعيلات...</p>
-                </div>
-              ) : renewalData.length === 0 && !renewalsBusy ? (
-                <div className="text-center py-16 px-4">
-                  <Clock className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600 mb-3" />
-                  <p className="text-gray-700 dark:text-gray-300 font-medium">لا يوجد سجل تفعيلات</p>
-                  <p className="text-sm text-gray-500 mt-1">لم يُسجَّل أي تجديد لهذا المشترك بعد.</p>
-                </div>
-              ) : (
-                <>
-                  <div className="wakeel-table-scroll overflow-x-auto">
-                    <table className="min-w-[960px] w-full text-right text-sm">
-                      <thead>
-                        <tr className="bg-gray-50/90 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700">
-                          <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">رقم الفاتورة</th>
-                          <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">تاريخ التفعيل</th>
-                          <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">الباقة</th>
-                          <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">الفترة</th>
-                          <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">السعر الأصلي</th>
-                          <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">سعر البيع</th>
-                          <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">المدفوع</th>
-                          <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">المتبقي</th>
-                          <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">الدفع</th>
-                          <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">الانتهاء</th>
-                          <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">الوكيل</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {renewalData.map((renewal: RenewalHistory) => (
-                          <tr
-                            key={renewal.id}
-                            className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/80 dark:hover:bg-gray-800/50 transition-colors"
-                          >
-                            <td className="px-4 py-3 whitespace-nowrap">
-                              <span className="inline-flex items-center gap-1.5 font-medium text-gray-900 dark:text-white">
-                                <CreditCard className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                                {renewal.receiptNumber}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap text-gray-800 dark:text-gray-200">
-                              <div className="flex items-center gap-1.5">
-                                <Calendar className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                                {formatDate(renewal.renewalDate)}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{renewal.newProfileName}</td>
-                            <td className="px-4 py-3 whitespace-nowrap tabular-nums">{renewal.renewalDays} يوم</td>
-                            <td className="px-4 py-3 whitespace-nowrap tabular-nums">{formatNumber(renewal.newProfileOriginalPrice, { suffix: ' د.ع' })}</td>
-                            <td className="px-4 py-3 whitespace-nowrap tabular-nums">{formatNumber(renewal.newProfileSalePrice, { suffix: ' د.ع' })}</td>
-                            <td className="px-4 py-3 whitespace-nowrap tabular-nums">{formatNumber(renewal.amountPaid, { suffix: ' د.ع' })}</td>
-                            <td className="px-4 py-3 whitespace-nowrap tabular-nums">
-                              <span className={renewal.remainingAmount > 0 ? 'text-red-600 dark:text-red-400 font-medium' : 'text-emerald-600 dark:text-emerald-400'}>
-                                {formatNumber(renewal.remainingAmount, { suffix: ' د.ع' })}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap">{getPaymentStatusBadge(renewal.paymentStatus)}</td>
-                            <td className="px-4 py-3 whitespace-nowrap text-gray-700 dark:text-gray-300">{formatDate(renewal.newExpirationDate)}</td>
-                            <td className="px-4 py-3 text-gray-600 dark:text-gray-400 text-xs max-w-[140px] truncate" title={renewal.agentCompanyName}>
-                              {renewal.agentCompanyName || '—'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {renewalTotalItems > 0 && (
-                    <Pagination
-                      currentPage={renewalPage}
-                      totalPages={renewalTotalPages}
-                      totalItems={renewalTotalItems}
-                      pageSize={RENEWAL_PAGE_SIZE}
-                      hasNextPage={renewalPage < renewalTotalPages}
-                      hasPreviousPage={renewalPage > 1}
-                      onPageChange={setRenewalPage}
-                      className="rounded-b-2xl"
-                    />
-                  )}
-                </>
-              )}
-            </div>
-          </section>
-
-          {pythonBackend && (
+          {/* 2 — سجل الجلسات (Python) أو سجل التفعيلات (.NET) */}
+          {pythonBackend ? (
             <section className="scroll-mt-24">
               <div className="flex items-center gap-3 mb-4">
                 <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-100 dark:bg-sky-900/40 text-sky-800 dark:text-sky-200 text-sm font-bold">
-                  3
+                  2
                 </span>
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white">سجل الجلسات</h2>
@@ -933,17 +837,21 @@ const SubscriberDetailsPage: React.FC = () => {
                                 key={sessionRowKey(row, idx)}
                                 className="border-b border-gray-100 dark:border-gray-800 hover:bg-sky-50/40 dark:hover:bg-sky-950/10"
                               >
-                                <td className="px-4 py-3 whitespace-nowrap text-gray-800 dark:text-gray-200">
-                                  {row.acctstarttime ? formatDate(row.acctstarttime) : '—'}
+                                <td className="px-4 py-3 whitespace-nowrap text-gray-800 dark:text-gray-200 tabular-nums">
+                                  {row.acctstarttime
+                                    ? formatSubscriberTableDateTime(row.acctstarttime, locale)
+                                    : '—'}
                                 </td>
-                                <td className="px-4 py-3 whitespace-nowrap">
+                                <td className="px-4 py-3 whitespace-nowrap tabular-nums">
                                   {isOnline ? (
                                     <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
                                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                                       متصل الآن
                                     </span>
                                   ) : (
-                                    <span className="text-gray-700 dark:text-gray-300">{formatDate(row.acctstoptime!)}</span>
+                                    <span className="text-gray-700 dark:text-gray-300">
+                                      {formatSubscriberTableDateTime(row.acctstoptime!, locale)}
+                                    </span>
                                   )}
                                 </td>
                                 <td className="px-4 py-3 whitespace-nowrap font-mono text-xs text-gray-800 dark:text-gray-200">
@@ -982,6 +890,211 @@ const SubscriberDetailsPage: React.FC = () => {
                     )}
                   </>
                 ) : null}
+              </div>
+            </section>
+          ) : (
+            <section className="scroll-mt-24">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 text-sm font-bold">
+                  2
+                </span>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">سجل التفعيلات</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">تجديدات الاشتراك والمدفوعات</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200/80 dark:border-gray-700/80 bg-white dark:bg-gray-900/40 shadow-sm overflow-hidden">
+                {renewalsBusy && renewalPage === 1 ? (
+                  <div className="flex flex-col items-center py-16">
+                    <RefreshCw className="h-8 w-8 animate-spin text-amber-500 mb-2" />
+                    <p className="text-sm text-gray-500">جاري تحميل سجل التفعيلات...</p>
+                  </div>
+                ) : renewalData.length === 0 && !renewalsBusy ? (
+                  <div className="text-center py-16 px-4">
+                    <Clock className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600 mb-3" />
+                    <p className="text-gray-700 dark:text-gray-300 font-medium">لا يوجد سجل تفعيلات</p>
+                    <p className="text-sm text-gray-500 mt-1">لم يُسجَّل أي تجديد لهذا المشترك بعد.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="wakeel-table-scroll overflow-x-auto">
+                      <table className="min-w-[960px] w-full text-right text-sm">
+                        <thead>
+                          <tr className="bg-gray-50/90 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700">
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">رقم الفاتورة</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">تاريخ التفعيل</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">الباقة</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">الفترة</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">السعر الأصلي</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">سعر البيع</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">المدفوع</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">المتبقي</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">الدفع</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">الانتهاء</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">الوكيل</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {renewalData.map((renewal: RenewalHistory) => (
+                            <tr
+                              key={renewal.id}
+                              className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/80 dark:hover:bg-gray-800/50 transition-colors"
+                            >
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span className="inline-flex items-center gap-1.5 font-medium text-gray-900 dark:text-white">
+                                  <CreditCard className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                                  {renewal.receiptNumber}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-gray-800 dark:text-gray-200 tabular-nums">
+                                <div className="flex items-center gap-1.5">
+                                  <Calendar className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                                  {formatSubscriberTableDateTime(renewal.renewalDate, locale) || '—'}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{renewal.newProfileName}</td>
+                              <td className="px-4 py-3 whitespace-nowrap tabular-nums">{renewal.renewalDays} يوم</td>
+                              <td className="px-4 py-3 whitespace-nowrap tabular-nums">{formatNumber(renewal.newProfileOriginalPrice, { suffix: ' د.ع' })}</td>
+                              <td className="px-4 py-3 whitespace-nowrap tabular-nums">{formatNumber(renewal.newProfileSalePrice, { suffix: ' د.ع' })}</td>
+                              <td className="px-4 py-3 whitespace-nowrap tabular-nums">{formatNumber(renewal.amountPaid, { suffix: ' د.ع' })}</td>
+                              <td className="px-4 py-3 whitespace-nowrap tabular-nums">
+                                <span className={renewal.remainingAmount > 0 ? 'text-red-600 dark:text-red-400 font-medium' : 'text-emerald-600 dark:text-emerald-400'}>
+                                  {formatNumber(renewal.remainingAmount, { suffix: ' د.ع' })}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">{getPaymentStatusBadge(renewal.paymentStatus)}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-gray-700 dark:text-gray-300 tabular-nums">
+                                {renewal.newExpirationDate
+                                  ? formatSubscriberTableDateTime(renewal.newExpirationDate, locale)
+                                  : '—'}
+                              </td>
+                              <td className="px-4 py-3 text-gray-600 dark:text-gray-400 text-xs max-w-[140px] truncate" title={renewal.agentCompanyName}>
+                                {renewal.agentCompanyName || '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {renewalTotalItems > 0 && (
+                      <Pagination
+                        currentPage={renewalPage}
+                        totalPages={renewalTotalPages}
+                        totalItems={renewalTotalItems}
+                        pageSize={RENEWAL_PAGE_SIZE}
+                        hasNextPage={renewalPage < renewalTotalPages}
+                        hasPreviousPage={renewalPage > 1}
+                        onPageChange={setRenewalPage}
+                        className="rounded-b-2xl"
+                      />
+                    )}
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* 3 — سجل التفعيلات (Python) */}
+          {pythonBackend && (
+            <section className="scroll-mt-24">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 text-sm font-bold">
+                  3
+                </span>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">سجل التفعيلات</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">تجديدات الاشتراك والمدفوعات</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200/80 dark:border-gray-700/80 bg-white dark:bg-gray-900/40 shadow-sm overflow-hidden">
+                {renewalsBusy && renewalPage === 1 ? (
+                  <div className="flex flex-col items-center py-16">
+                    <RefreshCw className="h-8 w-8 animate-spin text-amber-500 mb-2" />
+                    <p className="text-sm text-gray-500">جاري تحميل سجل التفعيلات...</p>
+                  </div>
+                ) : renewalData.length === 0 && !renewalsBusy ? (
+                  <div className="text-center py-16 px-4">
+                    <Clock className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600 mb-3" />
+                    <p className="text-gray-700 dark:text-gray-300 font-medium">لا يوجد سجل تفعيلات</p>
+                    <p className="text-sm text-gray-500 mt-1">لم يُسجَّل أي تجديد لهذا المشترك بعد.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="wakeel-table-scroll overflow-x-auto">
+                      <table className="min-w-[960px] w-full text-right text-sm">
+                        <thead>
+                          <tr className="bg-gray-50/90 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700">
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">رقم الفاتورة</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">تاريخ التفعيل</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">الباقة</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">الفترة</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">السعر الأصلي</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">سعر البيع</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">المدفوع</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">المتبقي</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">الدفع</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">الانتهاء</th>
+                            <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-400">الوكيل</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {renewalData.map((renewal: RenewalHistory) => (
+                            <tr
+                              key={renewal.id}
+                              className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/80 dark:hover:bg-gray-800/50 transition-colors"
+                            >
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span className="inline-flex items-center gap-1.5 font-medium text-gray-900 dark:text-white">
+                                  <CreditCard className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                                  {renewal.receiptNumber}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-gray-800 dark:text-gray-200 tabular-nums">
+                                <div className="flex items-center gap-1.5">
+                                  <Calendar className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                                  {formatSubscriberTableDateTime(renewal.renewalDate, locale) || '—'}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{renewal.newProfileName}</td>
+                              <td className="px-4 py-3 whitespace-nowrap tabular-nums">{renewal.renewalDays} يوم</td>
+                              <td className="px-4 py-3 whitespace-nowrap tabular-nums">{formatNumber(renewal.newProfileOriginalPrice, { suffix: ' د.ع' })}</td>
+                              <td className="px-4 py-3 whitespace-nowrap tabular-nums">{formatNumber(renewal.newProfileSalePrice, { suffix: ' د.ع' })}</td>
+                              <td className="px-4 py-3 whitespace-nowrap tabular-nums">{formatNumber(renewal.amountPaid, { suffix: ' د.ع' })}</td>
+                              <td className="px-4 py-3 whitespace-nowrap tabular-nums">
+                                <span className={renewal.remainingAmount > 0 ? 'text-red-600 dark:text-red-400 font-medium' : 'text-emerald-600 dark:text-emerald-400'}>
+                                  {formatNumber(renewal.remainingAmount, { suffix: ' د.ع' })}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">{getPaymentStatusBadge(renewal.paymentStatus)}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-gray-700 dark:text-gray-300 tabular-nums">
+                                {renewal.newExpirationDate
+                                  ? formatSubscriberTableDateTime(renewal.newExpirationDate, locale)
+                                  : '—'}
+                              </td>
+                              <td className="px-4 py-3 text-gray-600 dark:text-gray-400 text-xs max-w-[140px] truncate" title={renewal.agentCompanyName}>
+                                {renewal.agentCompanyName || '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {renewalTotalItems > 0 && (
+                      <Pagination
+                        currentPage={renewalPage}
+                        totalPages={renewalTotalPages}
+                        totalItems={renewalTotalItems}
+                        pageSize={RENEWAL_PAGE_SIZE}
+                        hasNextPage={renewalPage < renewalTotalPages}
+                        hasPreviousPage={renewalPage > 1}
+                        onPageChange={setRenewalPage}
+                        className="rounded-b-2xl"
+                      />
+                    )}
+                  </>
+                )}
               </div>
             </section>
           )}
