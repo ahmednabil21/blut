@@ -112,3 +112,21 @@ export function formatDisplayDateTime(
 ): string {
   return formatDisplayDate(input, { hour: '2-digit', minute: '2-digit' }, locale);
 }
+
+/** جدول المشتركين: YYYY/MM/DD أو YYYY/MM/DD HH:mm:ss عند وجود وقت في القيمة */
+export function formatSubscriberTableDateTime(
+  input: Date | string | null | undefined,
+  locale?: string
+): string {
+  const t = (input ?? '').toString().trim();
+  if (!t) return '';
+  const hasTime = /[T\s]\d{1,2}:\d{2}/.test(t);
+  if (hasTime) {
+    return formatDisplayDate(
+      input,
+      { hour: '2-digit', minute: '2-digit', second: '2-digit' },
+      locale
+    );
+  }
+  return formatDisplayDate(input, undefined, locale);
+}

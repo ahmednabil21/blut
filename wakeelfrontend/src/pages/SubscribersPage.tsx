@@ -66,6 +66,7 @@ import {
   statusBadgeClassFromDays,
   statusLabelFromDaysRemaining,
 } from '../utils/subscriberExpiry';
+import { formatSubscriberTableDateTime } from '../utils/formatDisplayDate';
 import { Subscriber, SubscriptionStatus, SubscriptionType, SubscriberCreateRequest, Profile, RenewalData, RenewalActivationMode, PaymentStatus, PaginatedResponse, PaginationParams, UserRole, ServiceType, SubscriberNoteType, EARTHLINK_USER_MANAGEMENT_URL, AgentReseller, ProfilePackageType, formatServiceTypeLabelAr, SUBSCRIBER_FETCH_LIMIT_PRESETS, type CashbackSynchronizationFtthResponse, type CashbackSynchronizationFtthRow, type ZainfiSubscriberDiffResponse, type ZainfiSubscriberDiffItem, type ZainfiApplyExternalExpirationRequest, type ActivationInvoicePrintSettingsDto, type BalanceTopUpRequest, type Dealer, type SubscriberNoteTypeOption, User, type RenewalReceipt, type ActivateSubscriberResponse, type ActivatePackageItem } from '../types';
 import {
   buildActivationReceiptPrintHtml,
@@ -127,6 +128,7 @@ const SUBSCRIBERS_TABLE_COLUMNS: { id: string; label: string }[] = [
   { id: 'paymentMethod', label: 'طريقة الدفع' },
   { id: 'activationDate', label: 'تاريخ التفعيل' },
   { id: 'expirationDate', label: 'تاريخ الانتهاء' },
+  { id: 'lastOnline', label: 'آخر اتصال' },
   { id: 'daysRemaining', label: 'الأيام المتبقية' },
   { id: 'status', label: 'الحالة' },
   { id: 'hasDebt', label: 'دين' },
@@ -172,6 +174,10 @@ function getSubscriberSortValue(
     }
     case 'expirationDate': {
       const d = parseSubscriberDate(subscriber.expirationDate);
+      return d ? d.getTime() : 0;
+    }
+    case 'lastOnline': {
+      const d = parseSubscriberDate(subscriber.lastOnline);
       return d ? d.getTime() : 0;
     }
     case 'daysRemaining':
@@ -2476,15 +2482,23 @@ const SubscribersPage: React.FC = () => {
       case 'activationDate':
         return (
           <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
-            {formatDate(subscriber.activationDate, { year: 'numeric', month: 'numeric', day: 'numeric' })}
+            {formatSubscriberTableDateTime(subscriber.activationDate, locale) || '—'}
           </td>
         );
       case 'expirationDate':
         return (
           <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
             {subscriber.expirationDate
-              ? formatDate(subscriber.expirationDate, { year: 'numeric', month: 'numeric', day: 'numeric' })
+              ? formatSubscriberTableDateTime(subscriber.expirationDate, locale)
               : 'غير محدد'}
+          </td>
+        );
+      case 'lastOnline':
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
+            {subscriber.lastOnline
+              ? formatSubscriberTableDateTime(subscriber.lastOnline, locale)
+              : '—'}
           </td>
         );
       case 'daysRemaining': {
@@ -3817,16 +3831,16 @@ const SubscribersPage: React.FC = () => {
               <span>لم تُجرَ مزامنة SAS بعد</span>
             )}
             {subscribersResponse?.source === 'database' ? (
-              <span className="text-gray-400">(من قاعدة البيانات)</span>
+              <span className="text-gray-400"></span>
             ) : subscribersResponse?.source === 'sas_live' ? (
               <span className="text-emerald-600 dark:text-emerald-400">
-                (من SAS مباشرة
+                
                 {connectionStatusFilter === 'online'
                   ? ' — متصلون'
                   : connectionStatusFilter === 'offline'
                     ? ' — غير متصلين'
                     : ''}
-                )
+                
               </span>
             ) : null}
             {subscribersFetching &&

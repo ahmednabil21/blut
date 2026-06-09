@@ -2137,6 +2137,11 @@ class ApiService {
       String(row.username ?? '');
     const activationDate = String(row.created_at ?? row.createdAt ?? row.activationDate ?? '');
     const expiration = String(row.expiration ?? row.expirationDate ?? '');
+    const lastOnlineRaw = row.last_online ?? row.lastOnline ?? row.LastOnline;
+    const lastOnline =
+      lastOnlineRaw != null && String(lastOnlineRaw).trim() !== ''
+        ? String(lastOnlineRaw).trim()
+        : undefined;
     const profileDetails = row.profile_details as { name?: string } | null | undefined;
     const sasId = String(row.id ?? row.user_id ?? '').trim();
     const daysRemaining = daysUntilExpiration(expiration || undefined);
@@ -2177,6 +2182,7 @@ class ApiService {
       secruptionId: sasId,
       username: String(row.username ?? ''),
       onlineStatus,
+      lastOnline,
       firstName,
       lastName,
       fullName,

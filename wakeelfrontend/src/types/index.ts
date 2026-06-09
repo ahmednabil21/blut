@@ -2124,6 +2124,8 @@ export interface Subscriber {
   deviceUsername?: string | null;
   /** SAS online_status: 1 = أونلاين، 0 = أوفلاين */
   onlineStatus?: number | null;
+  /** SAS last_online — آخر ظهور على الشبكة */
+  lastOnline?: string | null;
   firstName: string;
   lastName: string;
   fullName: string;
