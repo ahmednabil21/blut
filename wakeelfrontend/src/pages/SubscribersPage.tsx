@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { apiService, ApiService } from '../services/api';
 import {
   clearCachedSubscribers,
@@ -128,7 +128,6 @@ const SUBSCRIBERS_TABLE_COLUMNS: { id: string; label: string }[] = [
   { id: 'paymentMethod', label: 'طريقة الدفع' },
   { id: 'activationDate', label: 'تاريخ التفعيل' },
   { id: 'expirationDate', label: 'تاريخ الانتهاء' },
-  { id: 'lastOnline', label: 'آخر اتصال' },
   { id: 'daysRemaining', label: 'الأيام المتبقية' },
   { id: 'status', label: 'الحالة' },
   { id: 'hasDebt', label: 'دين' },
@@ -174,10 +173,6 @@ function getSubscriberSortValue(
     }
     case 'expirationDate': {
       const d = parseSubscriberDate(subscriber.expirationDate);
-      return d ? d.getTime() : 0;
-    }
-    case 'lastOnline': {
-      const d = parseSubscriberDate(subscriber.lastOnline);
       return d ? d.getTime() : 0;
     }
     case 'daysRemaining':
@@ -2422,8 +2417,13 @@ const SubscribersPage: React.FC = () => {
         );
       case 'username':
         return (
-          <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
-            {subscriber.username}
+          <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm`}>
+            <Link
+              to={`/admin/subscribers/${subscriber.id}`}
+              className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 hover:underline font-medium"
+            >
+              {subscriber.username}
+            </Link>
           </td>
         );
       case 'subscriberRegion': {
@@ -2491,14 +2491,6 @@ const SubscribersPage: React.FC = () => {
             {subscriber.expirationDate
               ? formatSubscriberTableDateTime(subscriber.expirationDate, locale)
               : 'غير محدد'}
-          </td>
-        );
-      case 'lastOnline':
-        return (
-          <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
-            {subscriber.lastOnline
-              ? formatSubscriberTableDateTime(subscriber.lastOnline, locale)
-              : '—'}
           </td>
         );
       case 'daysRemaining': {
