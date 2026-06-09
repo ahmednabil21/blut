@@ -465,6 +465,10 @@ const SubscribersPage: React.FC = () => {
   /** request_id ثابت لجلسة التفعيل — يمنع تكرار التفعيل عند Timeout */
   const activateRequestIdRef = useRef('');
   const [activateVerifying, setActivateVerifying] = useState(false);
+  /** بعد فشل التفعيل: إخفاء زر إعادة المحاولة لمدة 10 ثوانٍ */
+  const ACTIVATE_RETRY_COOLDOWN_SEC = 10;
+  const activateCooldownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [activateCooldownSec, setActivateCooldownSec] = useState(0);
   /** جاهزية POST /resellers/{id}/select قبل جلب الباقات */
   const [activateResellerReady, setActivateResellerReady] = useState(false);
   const activateResellerSelectRef = useRef<Promise<void> | null>(null);
@@ -1458,6 +1462,44 @@ const SubscribersPage: React.FC = () => {
     }
   }, [showRenewalModal]);
 
+  const clearActivateRetryCooldown = useCallback(() => {
+    if (activateCooldownIntervalRef.current) {
+      clearInterval(activateCooldownIntervalRef.current);
+      activateCooldownIntervalRef.current = null;
+    }
+    setActivateCooldownSec(0);
+  }, []);
+
+  const startActivateRetryCooldown = useCallback(() => {
+    if (activateCooldownIntervalRef.current) {
+      clearInterval(activateCooldownIntervalRef.current);
+      activateCooldownIntervalRef.current = null;
+    }
+    setActivateCooldownSec(ACTIVATE_RETRY_COOLDOWN_SEC);
+    activateCooldownIntervalRef.current = setInterval(() => {
+      setActivateCooldownSec((prev) => {
+        if (prev <= 1) {
+          if (activateCooldownIntervalRef.current) {
+            clearInterval(activateCooldownIntervalRef.current);
+            activateCooldownIntervalRef.current = null;
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, [ACTIVATE_RETRY_COOLDOWN_SEC]);
+
+  const onPythonActivateFailed = useCallback(() => {
+    setShowActivateEmployeeConfirm(false);
+    setShowActivateDebtConfirm(false);
+    startActivateRetryCooldown();
+  }, [startActivateRetryCooldown]);
+
+  useEffect(() => () => clearActivateRetryCooldown(), [clearActivateRetryCooldown]);
+
+  const pythonActivateRetryBlocked = activateCooldownSec > 0;
+
   useEffect(() => {
     if (!renewalData.newProfileId || !renewalInfo?.availableProfiles) return;
     const selectedProfile = renewalInfo.availableProfiles.find((p) => p.id === renewalData.newProfileId);
@@ -1898,11 +1940,12 @@ const SubscribersPage: React.FC = () => {
     activateResellerSelectRef.current = null;
     activateRequestIdRef.current = '';
     setActivateVerifying(false);
+    clearActivateRetryCooldown();
     setActivateEmployeeCode('');
     setShowActivateEmployeeConfirm(false);
     setAmountReceivedInFull(true);
     clearSubscriberSelection();
-  }, [clearSubscriberSelection]);
+  }, [clearActivateRetryCooldown, clearSubscriberSelection]);
 
   const ensureActivateResellerSelected = useCallback((rid: string) => {
     setSelectedResellerId(rid);
@@ -1946,6 +1989,7 @@ const SubscribersPage: React.FC = () => {
     setActivateEmployeeCode('');
     activateRequestIdRef.current = createActivateRequestId();
     setActivateVerifying(false);
+    clearActivateRetryCooldown();
     setRenewalData((prev) => ({
       ...prev,
       subscriberId: subscriber.id,
@@ -2033,6 +2077,7 @@ const SubscribersPage: React.FC = () => {
     async (res: ActivateSubscriberResponse) => {
       if (!isActivateSuccessResponse(res)) {
         const sasMsg = getActivateSasResponseMessage(res);
+        onPythonActivateFailed();
         showError(
           'فشل التفعيل',
           res.message?.trim() ||
@@ -2099,6 +2144,7 @@ const SubscribersPage: React.FC = () => {
       activateUsername,
       closeRenewalModal,
       formatNumber,
+      onPythonActivateFailed,
       pythonPackagePrice,
       queryClient,
       renewalData.amountPaid,
@@ -2176,9 +2222,11 @@ const SubscribersPage: React.FC = () => {
             return;
           }
           if (status.status === 'failed') {
+            onPythonActivateFailed();
             showError('فشل التفعيل', status.hint ?? status.message ?? 'فشل التفعيل');
             return;
           }
+          onPythonActivateFailed();
           showError(
             'التفعيل غير مؤكد',
             [
@@ -2188,6 +2236,7 @@ const SubscribersPage: React.FC = () => {
           );
           return;
         } catch (pollErr: unknown) {
+          onPythonActivateFailed();
           showError('فشل الاستعلام عن التفعيل', ApiService.showError(pollErr));
           return;
         } finally {
@@ -2195,6 +2244,7 @@ const SubscribersPage: React.FC = () => {
         }
       }
 
+      onPythonActivateFailed();
       const msg = formatActivateApiError(err);
       if (isActivateMissingSubscriberError(err)) {
         showError(
@@ -2758,7 +2808,7 @@ const SubscribersPage: React.FC = () => {
   };
 
   const handlePythonActivateSubmit = async () => {
-    if (pythonActivateBusy) return;
+    if (pythonActivateBusy || pythonActivateRetryBlocked) return;
     if (!pythonActivateResellerId) {
       showError('الرسيلر', 'المشترك غير مربوط برسيلر — لا يمكن التفعيل.');
       return;
@@ -2808,7 +2858,7 @@ const SubscribersPage: React.FC = () => {
   };
 
   const confirmPythonActivateWithEmployeeCode = () => {
-    if (pythonActivateBusy) return;
+    if (pythonActivateBusy || pythonActivateRetryBlocked) return;
     if (!/^\d{4}$/.test(activateEmployeeCode.trim())) {
       showError('رمز الموظف', 'أدخل رمز الموظف — 4 أرقام');
       return;
@@ -5055,38 +5105,44 @@ const SubscribersPage: React.FC = () => {
                   >
                     إلغاء
                   </button>
-                  {(!isPythonBackend() || pythonActivateStep === 2) && (
-                    <button
-                      type="submit"
-                      disabled={
-                        isPythonBackend()
-                          ? pythonActivateBusy ||
-                            !selectedPackageActivatable ||
-                            !activateSelectedPackageKey.trim() ||
-                            pythonPackagePrice == null
-                          : createRenewalMutation.isPending
-                      }
-                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed min-w-[140px]"
-                    >
-                      {(isPythonBackend()
-                        ? pythonActivateBusy && showActivateEmployeeConfirm
-                        : createRenewalMutation.isPending) ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                          جاري التفعيل...
-                        </>
-                      ) : (
-                        <>
-                          <RefreshCw className="h-4 w-4" />
-                          {isPythonBackend()
-                            ? 'تفعيل'
-                            : renewalViaSasTab
-                              ? 'تم التفعيل'
-                              : 'تفعيل المشترك'}
-                        </>
-                      )}
-                    </button>
-                  )}
+                  {(!isPythonBackend() || pythonActivateStep === 2) &&
+                    (isPythonBackend() && pythonActivateRetryBlocked ? (
+                      <p className="w-full sm:w-auto text-sm font-medium text-amber-700 dark:text-amber-300 tabular-nums text-center sm:text-end px-2">
+                        يمكنك إعادة المحاولة بعد {activateCooldownSec} ث
+                      </p>
+                    ) : (
+                      <button
+                        type="submit"
+                        disabled={
+                          isPythonBackend()
+                            ? pythonActivateBusy ||
+                              pythonActivateRetryBlocked ||
+                              !selectedPackageActivatable ||
+                              !activateSelectedPackageKey.trim() ||
+                              pythonPackagePrice == null
+                            : createRenewalMutation.isPending
+                        }
+                        className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed min-w-[140px]"
+                      >
+                        {(isPythonBackend()
+                          ? pythonActivateBusy && showActivateEmployeeConfirm
+                          : createRenewalMutation.isPending) ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                            جاري التفعيل...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="h-4 w-4" />
+                            {isPythonBackend()
+                              ? 'تفعيل'
+                              : renewalViaSasTab
+                                ? 'تم التفعيل'
+                                : 'تفعيل المشترك'}
+                          </>
+                        )}
+                      </button>
+                    ))}
                 </div>
               </form>
             )}
@@ -5207,21 +5263,27 @@ const SubscribersPage: React.FC = () => {
               >
                 إلغاء
               </button>
-              <button
-                type="button"
-                onClick={confirmPythonActivateWithEmployeeCode}
-                disabled={pythonActivateBusy || !/^\d{4}$/.test(activateEmployeeCode.trim())}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed min-w-[120px]"
-              >
-                {pythonActivateBusy ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                    جاري التفعيل...
-                  </>
-                ) : (
-                  'تأكيد التفعيل'
-                )}
-              </button>
+              {pythonActivateRetryBlocked ? (
+                <p className="w-full sm:w-auto text-sm font-medium text-amber-700 dark:text-amber-300 tabular-nums text-center sm:text-end px-2">
+                  يمكنك إعادة المحاولة بعد {activateCooldownSec} ث
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={confirmPythonActivateWithEmployeeCode}
+                  disabled={pythonActivateBusy || !/^\d{4}$/.test(activateEmployeeCode.trim())}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed min-w-[120px]"
+                >
+                  {pythonActivateBusy ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                      جاري التفعيل...
+                    </>
+                  ) : (
+                    'تأكيد التفعيل'
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>
