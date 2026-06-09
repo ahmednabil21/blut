@@ -50,6 +50,7 @@ import {
   ActivateModesConfig,
   ActivateSubscriberRequest,
   ActivateSubscriberResponse,
+  ActivateStatusResponse,
   ExtendDayStatusResponse,
   ExtendDayExecuteResponse,
   ActivationRecord,
@@ -2590,11 +2591,13 @@ class ApiService {
     if (!card_pin && !hasProfile && !series) {
       throw new Error('اختر الباقة أو أرسل السلسلة مع PIN');
     }
+    const requestId = (body.request_id ?? '').trim();
     const payload: Record<string, unknown> = {
       username,
       mock: body.mock === true ? true : false,
       sync_codes: body.sync_codes !== false,
     };
+    if (requestId) payload.request_id = requestId;
     if (card_pin) payload.card_pin = card_pin;
     if (series) payload.series = series;
     if (body.profile_id != null && Number.isFinite(body.profile_id)) {
@@ -2620,7 +2623,20 @@ class ApiService {
     } else if (empCode) {
       payload.employee_code = empCode;
     }
-    const response = await this.api.post<ActivateSubscriberResponse>('/activate', payload);
+    const response = await this.api.post<ActivateSubscriberResponse>('/activate', payload, {
+      timeout: 120_000,
+    });
+    return response.data;
+  }
+
+  /** GET /api/activate/status/{request_id} — استعلام حالة التفعيل بعد انقطاع الاتصال */
+  async getActivateStatus(requestId: string): Promise<ActivateStatusResponse> {
+    const id = requestId.trim();
+    if (!id) throw new Error('request_id مطلوب');
+    const response = await this.api.get<ActivateStatusResponse>(
+      `/activate/status/${encodeURIComponent(id)}`,
+      { timeout: 30_000 }
+    );
     return response.data;
   }
 

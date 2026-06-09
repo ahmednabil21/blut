@@ -3255,6 +3255,8 @@ export interface ActivateModesResponse {
 
 /** POST /api/activate — كلمة السر من إعدادات الريسيلر (activation_password) */
 export interface ActivateSubscriberRequest {
+  /** معرّف فريد للعميل — يُنشأ عند فتح مودال التفعيل (UUID) لمنع التكرار */
+  request_id?: string;
   username: string;
   card_pin?: string;
   series?: string;
@@ -3269,6 +3271,23 @@ export interface ActivateSubscriberRequest {
   amount_paid?: number;
   /** رمز الموظف المنفّذ — 4 أرقام */
   employee_code?: string;
+}
+
+export type ActivateRequestStatus =
+  | 'pending'
+  | 'sending'
+  | 'succeeded'
+  | 'failed'
+  | 'uncertain';
+
+/** GET /api/activate/status/{request_id} — استعلام بعد Timeout أو 503 */
+export interface ActivateStatusResponse {
+  request_id: string;
+  status: ActivateRequestStatus;
+  hint?: string;
+  message?: string;
+  /** عند status=succeeded قد يتضمن نتيجة التفعيل */
+  result?: ActivateSubscriberResponse;
 }
 
 export interface ActivateSubscriberResponse {

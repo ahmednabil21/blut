@@ -39,6 +39,14 @@ import {
   isActivateMissingSubscriberError,
   isActivateSuccessResponse,
 } from '../utils/activateApiErrors';
+import {
+  createActivateRequestId,
+  extractRequestIdFromActivateError,
+  formatActivateConflictMessage,
+  getActivateHttpStatus,
+  pollActivateStatus,
+  shouldPollActivateStatusAfterError,
+} from '../utils/activateRequestIdempotency';
 import { subscriberConnectionRowClass } from '../utils/subscriberOnlineStatus';
 import { packageIsActivatable, parseActivatePackageSelection } from '../utils/activatePackages';
 import {
@@ -46,8 +54,8 @@ import {
   resolvePackageSalePrice,
 } from '../utils/activatePackagePricing';
 import {
-  applyActivateDebtToRenewalReceipt,
-  mapActivationToRenewalReceipt,
+  buildActivateReceiptFromResponse,
+  mergeLatestActivationIntoReceipt,
   sortActivationRecordsNewestFirst,
 } from '../utils/activationRecord';
 import {
@@ -373,69 +381,6 @@ function filterAutoSyncFtthRowsWithDeviceUsername(
   return { ...res, data, count: data.length };
 }
 
-async function resolvePythonActivationReceipt(
-  username: string,
-  subscriber: Subscriber,
-  pkg: ActivatePackageItem | null,
-  price: number | null,
-  res: ActivateSubscriberResponse,
-  paidAmount?: number | null
-): Promise<RenewalReceipt> {
-  const packagePrice = res.package_price ?? price ?? subscriber.profilePrice ?? 0;
-  const amountPaid = res.amount_paid ?? paidAmount ?? packagePrice;
-
-  try {
-    const list = await apiService.getActivations({ username, page: 1, per_page: 5 });
-    const latest = sortActivationRecordsNewestFirst(list.data ?? [])[0];
-    if (latest) {
-      let receipt = mapActivationToRenewalReceipt(latest);
-      receipt.subscriberId = subscriber.id;
-      if (!receipt.subscriberPhone?.trim()) {
-        receipt.subscriberPhone = subscriber.phoneNumber ?? '';
-      }
-      receipt = applyActivateDebtToRenewalReceipt(receipt, res, {
-        packagePrice,
-        amountPaid,
-      });
-      return receipt;
-    }
-  } catch {
-    /* fallback */
-  }
-
-  const now = new Date().toISOString();
-  const profileName = pkg?.profile_name?.trim() || subscriber.profileName || '—';
-  const pin = (res.card_pin ?? '').trim();
-  let receipt: RenewalReceipt = {
-    id: pin || String(Date.now()),
-    receiptNumber: pin || String(Date.now()).slice(-8),
-    subscriberId: subscriber.id,
-    subscriberName: subscriber.fullName || subscriber.username,
-    subscriberUsername: subscriber.username,
-    subscriberPhone: subscriber.phoneNumber ?? '',
-    profileName,
-    oldProfileName: subscriber.profileName,
-    newProfileName: profileName,
-    newProfileOriginalPrice: packagePrice,
-    newProfileSalePrice: packagePrice,
-    finalPrice: packagePrice,
-    amountPaid,
-    remainingAmount: 0,
-    discountAmount: 0,
-    discountPercent: 0,
-    renewalPeriod: 30,
-    renewalDays: 30,
-    renewalDate: now,
-    newExpirationDate: subscriber.expirationDate ?? '',
-    paymentStatus: PaymentStatus.Paid,
-    wiFiCode: '',
-    createdAt: now,
-    agentCompanyName: subscriber.agentCompanyName ?? '',
-    activationPin: pin || null,
-  };
-  return applyActivateDebtToRenewalReceipt(receipt, res, { packagePrice, amountPaid });
-}
-
 const SubscribersPage: React.FC = () => {
   const { confirmDelete } = useConfirmation();
   const { user, isAuthenticated } = useAuth();
@@ -517,6 +462,9 @@ const SubscribersPage: React.FC = () => {
   const [showActivateDebtConfirm, setShowActivateDebtConfirm] = useState(false);
   /** رسيلر مثبّت عند فتح مودال التفعيل (X-Reseller-Id + select) */
   const [activateModalResellerId, setActivateModalResellerId] = useState('');
+  /** request_id ثابت لجلسة التفعيل — يمنع تكرار التفعيل عند Timeout */
+  const activateRequestIdRef = useRef('');
+  const [activateVerifying, setActivateVerifying] = useState(false);
   /** جاهزية POST /resellers/{id}/select قبل جلب الباقات */
   const [activateResellerReady, setActivateResellerReady] = useState(false);
   const activateResellerSelectRef = useRef<Promise<void> | null>(null);
@@ -1948,6 +1896,8 @@ const SubscribersPage: React.FC = () => {
     setActivateModalResellerId('');
     setActivateResellerReady(false);
     activateResellerSelectRef.current = null;
+    activateRequestIdRef.current = '';
+    setActivateVerifying(false);
     setActivateEmployeeCode('');
     setShowActivateEmployeeConfirm(false);
     setAmountReceivedInFull(true);
@@ -1994,6 +1944,8 @@ const SubscribersPage: React.FC = () => {
     setActivateResellerReady(false);
     setAmountReceivedInFull(true);
     setActivateEmployeeCode('');
+    activateRequestIdRef.current = createActivateRequestId();
+    setActivateVerifying(false);
     setRenewalData((prev) => ({
       ...prev,
       subscriberId: subscriber.id,
@@ -2077,6 +2029,84 @@ const SubscribersPage: React.FC = () => {
     },
   });
 
+  const handlePythonActivateSuccess = useCallback(
+    async (res: ActivateSubscriberResponse) => {
+      if (!isActivateSuccessResponse(res)) {
+        const sasMsg = getActivateSasResponseMessage(res);
+        showError(
+          'فشل التفعيل',
+          res.message?.trim() ||
+            (sasMsg ? `رفض SAS: ${sasMsg}` : 'لم يُؤكَّد نجاح التفعيل من SAS')
+        );
+        return;
+      }
+      const sub = selectedSubscriberForRenewal;
+      const username = (sub?.username ?? activateUsername ?? '').trim();
+      const pkg = selectedActivatePackage;
+      const price = pythonPackagePrice;
+      const paidAmount = renewalData.amountPaid;
+
+      closeRenewalModal();
+
+      const debtSuffix = formatActivateDebtSuccessSuffix(res, formatNumber);
+
+      if (sub && username) {
+        const receipt = buildActivateReceiptFromResponse(sub, pkg, price, res, paidAmount);
+        setLastReceipt(receipt);
+        setShowReceiptModal(true);
+
+        void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
+        void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
+        void queryClient.invalidateQueries({ queryKey: ['activations'] });
+        void queryClient.invalidateQueries({ queryKey: ['debts'] });
+
+        const packagePrice = res.package_price ?? price ?? sub.profilePrice ?? 0;
+        const amountPaidNorm = res.amount_paid ?? paidAmount ?? packagePrice;
+        void apiService
+          .getActivations({ username, page: 1, per_page: 5 })
+          .then((list) => {
+            const latest = sortActivationRecordsNewestFirst(list.data ?? [])[0];
+            if (!latest) return;
+            setLastReceipt((prev: RenewalReceipt | null) => {
+              if (!prev || prev.subscriberId !== sub.id) return prev;
+              return mergeLatestActivationIntoReceipt(prev, latest, sub, res, {
+                packagePrice,
+                amountPaid: amountPaidNorm,
+              });
+            });
+          })
+          .catch(() => {});
+
+        if (debtSuffix) {
+          showSuccess('تم التفعيل', `تم التفعيل بنجاح${debtSuffix}`);
+        }
+        return;
+      }
+
+      void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
+      void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
+      void queryClient.invalidateQueries({ queryKey: ['activations'] });
+      void queryClient.invalidateQueries({ queryKey: ['debts'] });
+
+      const sasOk = getActivateSasResponseMessage(res);
+      showSuccess(
+        'تم التفعيل',
+        (res.message?.trim() ||
+          (sasOk === 'rsp_success' ? 'تم التفعيل بنجاح' : 'تم تفعيل الكارد بنجاح')) + debtSuffix
+      );
+    },
+    [
+      activateUsername,
+      closeRenewalModal,
+      formatNumber,
+      pythonPackagePrice,
+      queryClient,
+      renewalData.amountPaid,
+      selectedActivatePackage,
+      selectedSubscriberForRenewal,
+    ]
+  );
+
   const pythonActivateMutation = useMutation({
     mutationFn: async () => {
       if (pythonActivateResellerId) {
@@ -2103,7 +2133,9 @@ const SubscribersPage: React.FC = () => {
       if (!latestCard.pin?.trim() || !latestCard.series?.trim()) {
         throw new Error('لا يوجد كود متاح على SAS لهذه الباقة');
       }
+      const requestId = activateRequestIdRef.current.trim();
       return apiService.activateSubscriber({
+        request_id: requestId || undefined,
         username,
         card_pin: latestCard.pin.trim(),
         series: latestCard.series.trim(),
@@ -2116,59 +2148,53 @@ const SubscribersPage: React.FC = () => {
         employee_code: activateEmployeeCode.trim(),
       });
     },
-    onSuccess: async (res) => {
-      if (!isActivateSuccessResponse(res)) {
-        const sasMsg = getActivateSasResponseMessage(res);
-        showError(
-          'فشل التفعيل',
-          res.message?.trim() ||
-            (sasMsg ? `رفض SAS: ${sasMsg}` : 'لم يُؤكَّد نجاح التفعيل من SAS')
-        );
-        return;
-      }
-      const sub = selectedSubscriberForRenewal;
-      const username = (sub?.username ?? activateUsername ?? '').trim();
-      const pkg = selectedActivatePackage;
-      const price = pythonPackagePrice;
-      const paidAmount = renewalData.amountPaid;
+    onSuccess: (res) => {
+      void handlePythonActivateSuccess(res);
+    },
+    onError: async (err: unknown) => {
+      const requestId =
+        activateRequestIdRef.current.trim() || extractRequestIdFromActivateError(err) || '';
 
-      void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
-      void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
-      void queryClient.invalidateQueries({ queryKey: ['activations'] });
-      void queryClient.invalidateQueries({ queryKey: ['debts'] });
-      closeRenewalModal();
-
-      const debtSuffix = formatActivateDebtSuccessSuffix(res, formatNumber);
-
-      if (sub && username) {
+      if (requestId && shouldPollActivateStatusAfterError(err)) {
+        setActivateVerifying(true);
         try {
-          const receipt = await resolvePythonActivationReceipt(
-            username,
-            sub,
-            pkg,
-            price,
-            res,
-            paidAmount
+          showInfo(
+            'التفعيل',
+            'انقطع الاتصال أو التفعيل قيد المعالجة — جاري التحقق من الحالة دون إنشاء طلب جديد...'
           );
-          setLastReceipt(receipt);
-          setShowReceiptModal(true);
-          if (debtSuffix) {
-            showSuccess('تم التفعيل', `تم التفعيل بنجاح${debtSuffix}`);
+          const status = await pollActivateStatus(requestId, (id) =>
+            apiService.getActivateStatus(id)
+          );
+          if (status.status === 'succeeded') {
+            const res: ActivateSubscriberResponse =
+              status.result ??
+              ({
+                success: true,
+                message: status.message ?? status.hint,
+              } as ActivateSubscriberResponse);
+            await handlePythonActivateSuccess(res);
+            return;
           }
+          if (status.status === 'failed') {
+            showError('فشل التفعيل', status.hint ?? status.message ?? 'فشل التفعيل');
+            return;
+          }
+          showError(
+            'التفعيل غير مؤكد',
+            [
+              status.hint ?? status.message ?? 'لم يُؤكَّد التفعيل بعد',
+              'لا تُنشئ طلباً جديداً — أعد المحاولة لاحقاً بنفس العملية أو استعلم عن الحالة.',
+            ].join('\n\n')
+          );
           return;
-        } catch {
-          /* fallback toast below */
+        } catch (pollErr: unknown) {
+          showError('فشل الاستعلام عن التفعيل', ApiService.showError(pollErr));
+          return;
+        } finally {
+          setActivateVerifying(false);
         }
       }
 
-      const sasOk = getActivateSasResponseMessage(res);
-      showSuccess(
-        'تم التفعيل',
-        (res.message?.trim() ||
-          (sasOk === 'rsp_success' ? 'تم التفعيل بنجاح' : 'تم تفعيل الكارد بنجاح')) + debtSuffix
-      );
-    },
-    onError: (err: unknown) => {
       const msg = formatActivateApiError(err);
       if (isActivateMissingSubscriberError(err)) {
         showError(
@@ -2177,11 +2203,15 @@ const SubscribersPage: React.FC = () => {
         );
         return;
       }
+      if (getActivateHttpStatus(err) === 409) {
+        showError('التفعيل', formatActivateConflictMessage(err));
+        return;
+      }
       showError('فشل التفعيل', msg);
     },
   });
 
-  const pythonActivateBusy = pythonActivateMutation.isPending;
+  const pythonActivateBusy = pythonActivateMutation.isPending || activateVerifying;
 
   const otherDealerTopUpMutation = useMutation({
     mutationFn: (body: BalanceTopUpRequest) => apiService.postBalanceTopUp(body),

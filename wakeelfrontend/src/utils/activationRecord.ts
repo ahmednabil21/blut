@@ -1,4 +1,11 @@
-import { PaymentStatus, type ActivationRecord, type RenewalReceipt, type ActivateSubscriberResponse } from '../types';
+import {
+  PaymentStatus,
+  type ActivatePackageItem,
+  type ActivationRecord,
+  type ActivateSubscriberResponse,
+  type RenewalReceipt,
+  type Subscriber,
+} from '../types';
 import { getActivateDebtRemaining } from './activateApiErrors';
 
 function parseMoney(v: string | number | null | undefined): number {
@@ -105,6 +112,98 @@ export function mapActivationToRenewalReceipt(row: ActivationRecord): RenewalRec
     activationPin: row.pin ?? null,
     activationTransaction: row.transaction ?? null,
   };
+}
+
+function pickActivateResponseString(
+  obj: Record<string, unknown> | undefined,
+  ...keys: string[]
+): string {
+  if (!obj) return '';
+  for (const key of keys) {
+    const v = obj[key];
+    if (v != null && String(v).trim()) return String(v).trim();
+  }
+  return '';
+}
+
+function extractNewExpirationFromActivateResponse(res: ActivateSubscriberResponse): string {
+  const preflight =
+    res.preflight && typeof res.preflight === 'object'
+      ? (res.preflight as Record<string, unknown>)
+      : undefined;
+  const sasRaw = res.sas_response ?? res.sasResponse;
+  const sas =
+    sasRaw && typeof sasRaw === 'object' ? (sasRaw as Record<string, unknown>) : undefined;
+  return (
+    pickActivateResponseString(preflight, 'new_expiration', 'newExpiration', 'expiration_date', 'expiration') ||
+    pickActivateResponseString(sas, 'new_expiration', 'newExpiration', 'expiration_date', 'expiration') ||
+    ''
+  );
+}
+
+/** وصل تفعيل فوري من استجابة POST /activate — بلا انتظار GET /activations */
+export function buildActivateReceiptFromResponse(
+  subscriber: Subscriber,
+  pkg: ActivatePackageItem | null,
+  price: number | null,
+  res: ActivateSubscriberResponse,
+  paidAmount?: number | null
+): RenewalReceipt {
+  const packagePrice = res.package_price ?? price ?? subscriber.profilePrice ?? 0;
+  const amountPaid = res.amount_paid ?? paidAmount ?? packagePrice;
+  const now = new Date().toISOString();
+  const profileName = pkg?.profile_name?.trim() || subscriber.profileName || '—';
+  const pin = (res.card_pin ?? '').trim();
+  const newExpiration =
+    extractNewExpirationFromActivateResponse(res) || subscriber.expirationDate || '';
+
+  let receipt: RenewalReceipt = {
+    id: pin || String(Date.now()),
+    receiptNumber: pin || String(Date.now()).slice(-8),
+    subscriberId: subscriber.id,
+    subscriberName: subscriber.fullName || subscriber.username,
+    subscriberUsername: subscriber.username,
+    subscriberPhone: subscriber.phoneNumber ?? '',
+    profileName,
+    oldProfileName: subscriber.profileName,
+    newProfileName: profileName,
+    newProfileOriginalPrice: packagePrice,
+    newProfileSalePrice: packagePrice,
+    finalPrice: packagePrice,
+    amountPaid,
+    remainingAmount: 0,
+    discountAmount: 0,
+    discountPercent: 0,
+    renewalPeriod: 30,
+    renewalDays: 30,
+    renewalDate: now,
+    newExpirationDate: newExpiration,
+    paymentStatus: PaymentStatus.Paid,
+    wiFiCode: '',
+    createdAt: now,
+    agentCompanyName: subscriber.agentCompanyName ?? '',
+    activationPin: pin || null,
+  };
+  return applyActivateDebtToRenewalReceipt(receipt, res, { packagePrice, amountPaid });
+}
+
+/** يُحدّث الوصل من أحدث سجل تفعيل إن وُجد */
+export function mergeLatestActivationIntoReceipt(
+  receipt: RenewalReceipt,
+  row: ActivationRecord,
+  subscriber: Subscriber,
+  res: ActivateSubscriberResponse,
+  opts?: { packagePrice?: number | null; amountPaid?: number | null }
+): RenewalReceipt {
+  let merged = mapActivationToRenewalReceipt(row);
+  merged = {
+    ...merged,
+    subscriberId: subscriber.id,
+    subscriberPhone: merged.subscriberPhone?.trim()
+      ? merged.subscriberPhone
+      : subscriber.phoneNumber ?? '',
+  };
+  return applyActivateDebtToRenewalReceipt(merged, res, opts);
 }
 
 /** يدمج بيانات الدين من استجابة POST /api/activate في وصل التفعيل */
