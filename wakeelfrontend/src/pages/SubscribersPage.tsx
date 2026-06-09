@@ -75,7 +75,7 @@ import {
   statusLabelFromDaysRemaining,
 } from '../utils/subscriberExpiry';
 import { formatSubscriberTableDateTime } from '../utils/formatDisplayDate';
-import { Subscriber, SubscriptionStatus, SubscriptionType, SubscriberCreateRequest, Profile, RenewalData, RenewalActivationMode, PaymentStatus, PaginatedResponse, PaginationParams, UserRole, ServiceType, SubscriberNoteType, EARTHLINK_USER_MANAGEMENT_URL, AgentReseller, ProfilePackageType, formatServiceTypeLabelAr, SUBSCRIBER_FETCH_LIMIT_PRESETS, type CashbackSynchronizationFtthResponse, type CashbackSynchronizationFtthRow, type ZainfiSubscriberDiffResponse, type ZainfiSubscriberDiffItem, type ZainfiApplyExternalExpirationRequest, type ActivationInvoicePrintSettingsDto, type BalanceTopUpRequest, type Dealer, type SubscriberNoteTypeOption, User, type RenewalReceipt, type ActivateSubscriberResponse, type ActivatePackageItem } from '../types';
+import { Subscriber, SubscriptionStatus, SubscriptionType, SubscriberCreateRequest, Profile, RenewalData, RenewalActivationMode, PaymentStatus, PaginatedResponse, PaginationParams, UserRole, ServiceType, SubscriberNoteType, EARTHLINK_USER_MANAGEMENT_URL, AgentReseller, ProfilePackageType, formatServiceTypeLabelAr, SUBSCRIBER_FETCH_LIMIT_PRESETS, type CashbackSynchronizationFtthResponse, type CashbackSynchronizationFtthRow, type ZainfiSubscriberDiffResponse, type ZainfiSubscriberDiffItem, type ZainfiApplyExternalExpirationRequest, type ActivationInvoicePrintSettingsDto, type BalanceTopUpRequest, type Dealer, type SubscriberNoteTypeOption, User, type RenewalReceipt, type ActivateSubscriberResponse } from '../types';
 import {
   buildActivationReceiptPrintHtml,
   embedActivationReceiptStaticImages,
@@ -1886,7 +1886,7 @@ const SubscribersPage: React.FC = () => {
     }
   });
 
-  const closeRenewalModal = () => {
+  const closeRenewalModal = useCallback(() => {
     setSelectedSubscriberForRenewal(null);
     setShowRenewalModal(false);
     setRenewalViaSasTab(false);
@@ -1902,7 +1902,7 @@ const SubscribersPage: React.FC = () => {
     setShowActivateEmployeeConfirm(false);
     setAmountReceivedInFull(true);
     clearSubscriberSelection();
-  };
+  }, [clearSubscriberSelection]);
 
   const ensureActivateResellerSelected = useCallback((rid: string) => {
     setSelectedResellerId(rid);
