@@ -2748,13 +2748,13 @@ const SubscribersPage: React.FC = () => {
       return;
     }
 
-    setActivateEmployeeCode((prev) => prev.trim() || (user?.employeeCode ?? '').trim());
+    setActivateEmployeeCode('');
     setShowActivateEmployeeConfirm(true);
   };
 
   const proceedToActivateEmployeeConfirm = () => {
     setShowActivateDebtConfirm(false);
-    setActivateEmployeeCode((prev) => prev.trim() || (user?.employeeCode ?? '').trim());
+    setActivateEmployeeCode('');
     setShowActivateEmployeeConfirm(true);
   };
 
@@ -5119,14 +5119,15 @@ const SubscribersPage: React.FC = () => {
                 </label>
                 <input
                   id="activate-employee-code-confirm"
-                  type="text"
+                  type="password"
                   inputMode="numeric"
                   maxLength={4}
                   pattern="\d{4}"
                   dir="ltr"
                   autoFocus
-                  autoComplete="off"
-                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-mono tracking-widest text-center text-lg disabled:opacity-60"
+                  autoComplete="new-password"
+                  name="activate-employee-code"
+                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-mono tracking-widest text-center text-lg disabled:opacity-60 [-webkit-text-security:disc]"
                   placeholder="••••"
                   value={activateEmployeeCode}
                   onChange={(e) =>
@@ -5147,6 +5148,7 @@ const SubscribersPage: React.FC = () => {
                 type="button"
                 onClick={() => {
                   if (pythonActivateBusy) return;
+                  setActivateEmployeeCode('');
                   setShowActivateEmployeeConfirm(false);
                 }}
                 disabled={pythonActivateBusy}
