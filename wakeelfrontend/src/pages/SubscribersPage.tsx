@@ -64,6 +64,7 @@ import {
   saveSubscriberListFilters,
 } from '../utils/subscriberListFiltersStorage';
 import { PythonActivateWizard } from '../components/activation/PythonActivateWizard';
+import { SubscriberExtendDayIcon } from '../components/subscribers/SubscriberExtendDayIcon';
 import {
   daysUntilExpiration,
   calendarDaysBetween,
@@ -75,6 +76,7 @@ import {
   statusLabelFromDaysRemaining,
 } from '../utils/subscriberExpiry';
 import { formatSubscriberTableDateTime } from '../utils/formatDisplayDate';
+import { formatSasParentZone } from '../utils/subscriberParentZone';
 import { Subscriber, SubscriptionStatus, SubscriptionType, SubscriberCreateRequest, Profile, RenewalData, RenewalActivationMode, PaymentStatus, PaginatedResponse, PaginationParams, UserRole, ServiceType, SubscriberNoteType, EARTHLINK_USER_MANAGEMENT_URL, AgentReseller, ProfilePackageType, formatServiceTypeLabelAr, SUBSCRIBER_FETCH_LIMIT_PRESETS, type CashbackSynchronizationFtthResponse, type CashbackSynchronizationFtthRow, type ZainfiSubscriberDiffResponse, type ZainfiSubscriberDiffItem, type ZainfiApplyExternalExpirationRequest, type ActivationInvoicePrintSettingsDto, type BalanceTopUpRequest, type Dealer, type SubscriberNoteTypeOption, User, type RenewalReceipt, type ActivateSubscriberResponse } from '../types';
 import {
   buildActivationReceiptPrintHtml,
@@ -135,6 +137,7 @@ const SUBSCRIBERS_TABLE_COLUMNS: { id: string; label: string }[] = [
   { id: 'subscriberRegion', label: 'منطقة المشترك' },
   { id: 'phoneNumber', label: 'رقم الهاتف' },
   { id: 'zone', label: 'المنطقة' },
+  { id: 'parentZone', label: 'الزون' },
   { id: 'noteType', label: 'نوع الملاحظة' },
   { id: 'note', label: 'الملاحظات' },
   { id: 'profile', label: 'الباقة' },
@@ -172,6 +175,8 @@ function getSubscriberSortValue(
       return (subscriber.phoneNumber || '').toLowerCase();
     case 'zone':
       return (subscriber.zone ?? '').toLowerCase();
+    case 'parentZone':
+      return formatSasParentZone(subscriber.parentUsername).toLowerCase();
     case 'noteType':
       return subscriber.noteType ?? -1;
     case 'note':
@@ -465,6 +470,9 @@ const SubscribersPage: React.FC = () => {
   /** request_id ثابت لجلسة التفعيل — يمنع تكرار التفعيل عند Timeout */
   const activateRequestIdRef = useRef('');
   const [activateVerifying, setActivateVerifying] = useState(false);
+  const [extendDayModalSubscriber, setExtendDayModalSubscriber] = useState<Subscriber | null>(null);
+  const [extendDayEmployeeCode, setExtendDayEmployeeCode] = useState('');
+  const [extendDayRowId, setExtendDayRowId] = useState<string | null>(null);
   /** بعد فشل التفعيل: إخفاء زر إعادة المحاولة لمدة 10 ثوانٍ */
   const ACTIVATE_RETRY_COOLDOWN_SEC = 10;
   const activateCooldownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -2005,73 +2013,65 @@ const SubscribersPage: React.FC = () => {
     void queryClient.invalidateQueries({ queryKey: ['activate-packages'] });
   };
 
-  const extendDayTargetSubscriber = useMemo(() => {
-    if (!isPythonBackend() || selectedIds.length !== 1) return null;
-    return subscribers?.find((s) => s.id === selectedIds[0]) ?? null;
-  }, [selectedIds, subscribers]);
+  const openExtendDayModal = (subscriber: Subscriber) => {
+    if (subscriber.debtDays !== 0) {
+      showInfo('تمديد', 'تم استخدام التمديد لهذا المشترك — غير متاح حالياً');
+      return;
+    }
+    setExtendDayModalSubscriber(subscriber);
+    setExtendDayEmployeeCode('');
+  };
 
-  const extendDayResellerId = useMemo(() => {
-    const sub = extendDayTargetSubscriber;
-    if (!sub) return '';
-    return resolveSubscriberActivateResellerId(sub, {
-      operationalResellerId: selectedOperationalResellerId,
-    });
-  }, [extendDayTargetSubscriber, selectedOperationalResellerId]);
-
-  const extendDayUsername = useMemo(() => {
-    const sub = extendDayTargetSubscriber;
-    if (!sub) return '';
-    return (sub.username ?? sub.deviceUsername ?? '').trim();
-  }, [extendDayTargetSubscriber]);
-
-  const { data: extendDayStatus, isLoading: extendDayStatusLoading } = useQuery({
-    queryKey: ['extend-day-status', extendDayResellerId, extendDayUsername],
-    queryFn: async () => {
-      if (extendDayResellerId) {
-        setSelectedResellerId(extendDayResellerId);
-        await apiService.selectApiReseller(extendDayResellerId);
-      }
-      const sub = extendDayTargetSubscriber!;
-      const sasId = parseInt(String(sub.id), 10);
-      return apiService.getExtendDayStatus({
-        username: extendDayUsername,
-        sasUserId: Number.isFinite(sasId) ? sasId : undefined,
-      });
-    },
-    enabled:
-      isPythonBackend() &&
-      !!extendDayTargetSubscriber &&
-      !!extendDayUsername &&
-      !!extendDayResellerId,
-    staleTime: 30_000,
-  });
+  const closeExtendDayModal = () => {
+    setExtendDayModalSubscriber(null);
+    setExtendDayEmployeeCode('');
+  };
 
   const extendDayMutation = useMutation({
-    mutationFn: async () => {
-      if (!extendDayStatus?.can_execute) {
-        throw new Error(extendDayStatus?.message_ar ?? 'لا يمكن تنفيذ التمديد');
+    mutationFn: async (vars: { subscriber: Subscriber; employeeCode: string }) => {
+      const sub = vars.subscriber;
+      if (sub.debtDays !== 0) {
+        throw new Error('لا يمكن التمديد — تم استخدام التمديد هذا الشهر');
       }
-      if (extendDayResellerId) {
-        setSelectedResellerId(extendDayResellerId);
-        await apiService.selectApiReseller(extendDayResellerId);
+      const username = (sub.username ?? sub.deviceUsername ?? '').trim();
+      if (!username) throw new Error('اسم المستخدم غير متوفر');
+      const resellerId = resolveSubscriberActivateResellerId(sub, {
+        operationalResellerId: selectedOperationalResellerId,
+      });
+      if (resellerId) {
+        setSelectedResellerId(resellerId);
+        await apiService.selectApiReseller(resellerId);
       }
-      const sub = extendDayTargetSubscriber!;
       const sasId = parseInt(String(sub.id), 10);
+      setExtendDayRowId(sub.id);
       return apiService.executeExtendDay({
-        username: extendDayUsername,
+        username,
         sasUserId: Number.isFinite(sasId) ? sasId : undefined,
+        employee_code: vars.employeeCode.trim(),
       });
     },
     onSuccess: (res) => {
       showSuccess('تمديد', res.message?.trim() || 'تم تمديد المشترك يوماً واحداً');
-      void queryClient.invalidateQueries({ queryKey: ['extend-day-status'] });
+      closeExtendDayModal();
       void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
-      clearSubscriberSelection();
     },
     onError: (err: unknown) => {
       showError('تمديد', ApiService.showError(err));
     },
+    onSettled: () => {
+      setExtendDayRowId(null);
+    },
   });
+
+  const confirmExtendDayWithEmployeeCode = () => {
+    const sub = extendDayModalSubscriber;
+    if (!sub || extendDayMutation.isPending) return;
+    if (!/^\d{4}$/.test(extendDayEmployeeCode.trim())) {
+      showError('رمز الموظف', 'أدخل رمز الموظف — 4 أرقام');
+      return;
+    }
+    extendDayMutation.mutate({ subscriber: sub, employeeCode: extendDayEmployeeCode.trim() });
+  };
 
   const handlePythonActivateSuccess = useCallback(
     async (res: ActivateSubscriberResponse) => {
@@ -2542,6 +2542,14 @@ const SubscribersPage: React.FC = () => {
             {subscriber.zone ?? '—'}
           </td>
         );
+      case 'parentZone': {
+        const parentZone = formatSasParentZone(subscriber.parentUsername);
+        return (
+          <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
+            {parentZone || '—'}
+          </td>
+        );
+      }
       case 'noteType':
         return (
           <td key={columnId} className={`${cellBase} whitespace-nowrap text-xs sm:text-sm text-gray-900 dark:text-white`}>
@@ -3593,41 +3601,6 @@ const SubscribersPage: React.FC = () => {
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          {isPythonBackend() && extendDayTargetSubscriber && (
-            <button
-              type="button"
-              title={extendDayStatus?.message_ar ?? 'تمديد يوم واحد (1-DAY)'}
-              disabled={
-                extendDayStatusLoading ||
-                extendDayMutation.isPending ||
-                extendDayStatus?.button_disabled !== false
-              }
-              onClick={() => {
-                if (!extendDayStatus?.can_execute) {
-                  showInfo(
-                    'تمديد',
-                    extendDayStatus?.message_ar ?? 'غير متاح — ربما استُخدم التمديد هذا الشهر'
-                  );
-                  return;
-                }
-                extendDayMutation.mutate();
-              }}
-              className={`flex items-center gap-2 px-3 py-2.5 sm:px-4 sm:py-2 rounded-lg text-sm sm:text-base text-white transition-colors min-h-[44px] touch-manipulation disabled:cursor-not-allowed ${
-                extendDayStatusLoading
-                  ? 'bg-gray-500 opacity-70'
-                  : extendDayStatus?.button_color === 'green'
-                    ? 'bg-green-600 hover:bg-green-700 disabled:opacity-50'
-                    : 'bg-red-600 hover:bg-red-700 disabled:opacity-80'
-              }`}
-            >
-              <CalendarPlus className="h-4 w-4 shrink-0" />
-              <span>
-                {extendDayMutation.isPending || extendDayStatusLoading
-                  ? 'جاري الفحص...'
-                  : 'تمديد'}
-              </span>
-            </button>
-          )}
           <div className="relative" ref={dropdownRef}>
             <button
               type="button"
@@ -3654,35 +3627,6 @@ const SubscribersPage: React.FC = () => {
                     <RefreshCw className="h-4 w-4" />
                     <span>تفعيل المشترك</span>
                   </button>
-                  )}
-                  {isPythonBackend() && selectedIds.length === 1 && extendDayTargetSubscriber && (
-                    <button
-                      onClick={() => {
-                        if (!extendDayStatus?.can_execute) {
-                          showInfo(
-                            'تمديد',
-                            extendDayStatus?.message_ar ?? 'غير متاح'
-                          );
-                          setShowActionsDropdown(false);
-                          return;
-                        }
-                        extendDayMutation.mutate();
-                        setShowActionsDropdown(false);
-                      }}
-                      disabled={
-                        extendDayStatusLoading ||
-                        extendDayMutation.isPending ||
-                        extendDayStatus?.button_disabled !== false
-                      }
-                      className={`w-full text-right px-4 py-2 text-sm flex items-center space-x-2 ${
-                        extendDayStatus?.button_color === 'green'
-                          ? 'text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20'
-                          : 'text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
-                      } disabled:opacity-50`}
-                    >
-                      <CalendarPlus className="h-4 w-4" />
-                      <span>تمديد يوم</span>
-                    </button>
                   )}
                   {selectedIds.length === 1 && showActivateViaTabAction && (
                     <button
@@ -4229,26 +4173,23 @@ const SubscribersPage: React.FC = () => {
           <table className="min-w-full text-right">
             <thead>
               <tr>
-                <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3">
-                  <div className="flex items-center gap-1">
-                    <button onClick={toggleSelectAll} className="p-1" aria-label="تحديد الكل">
-                      {subscribers && selectedIds.length === subscribers.length && subscribers.length > 0 ? (
-                        <CheckSquare className="h-3 w-3 sm:h-4 sm:w-4 text-primary-600" />
-                      ) : (
-                        <Square className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400" />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={openColumnOrderModal}
-                      className="p-1 rounded text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                      title="ترتيب الأعمدة"
-                      aria-label="ترتيب الأعمدة"
-                    >
-                      <Columns3 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                    </button>
-                  </div>
+                <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 w-10">
+                  <button onClick={toggleSelectAll} className="p-1" aria-label="تحديد الكل">
+                    {subscribers && selectedIds.length === subscribers.length && subscribers.length > 0 ? (
+                      <CheckSquare className="h-3 w-3 sm:h-4 sm:w-4 text-primary-600" />
+                    ) : (
+                      <Square className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400" />
+                    )}
+                  </button>
                 </th>
+                {isPythonBackend() && (
+                  <th
+                    className="px-1 sm:px-2 py-2 sm:py-3 w-12 text-center"
+                    title="تمديد يوم واحد"
+                  >
+                    <CalendarPlus className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-400 mx-auto" aria-hidden />
+                  </th>
+                )}
                 {orderedTableColumns.map(({ id, label }) => {
                   const isActive = sortColumn === id;
                   const SortIcon = isActive ? (sortDescending ? ArrowDown : ArrowUp) : null;
@@ -4294,6 +4235,16 @@ const SubscribersPage: React.FC = () => {
                       )}
                     </button>
                   </td>
+                  {isPythonBackend() && (
+                    <td className="px-1 sm:px-2 py-2 sm:py-4 text-center">
+                      <SubscriberExtendDayIcon
+                        debtDays={subscriber.debtDays}
+                        loading={extendDayRowId === subscriber.id && extendDayMutation.isPending}
+                        disabled={extendDayMutation.isPending}
+                        onExtend={() => openExtendDayModal(subscriber)}
+                      />
+                    </td>
+                  )}
                   {orderedTableColumns.map(({ id }) => renderSubscriberTableCell(subscriber, id))}
                 </tr>
               ))}
@@ -5284,6 +5235,99 @@ const SubscribersPage: React.FC = () => {
                   )}
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {extendDayModalSubscriber && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="extend-day-confirm-title"
+        >
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200/90 dark:border-gray-700 w-full max-w-md overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h2
+                id="extend-day-confirm-title"
+                className="text-lg font-bold text-gray-900 dark:text-white"
+              >
+                تمديد يوم واحد
+              </h2>
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
+                تمديد المشترك{' '}
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  {extendDayModalSubscriber.fullName?.trim() ||
+                    extendDayModalSubscriber.username ||
+                    '—'}
+                </span>{' '}
+                لمدة يوم واحد (1-DAY)
+              </p>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <div>
+                <label
+                  htmlFor="extend-day-employee-code"
+                  className="block text-sm text-gray-600 dark:text-gray-400 mb-1"
+                >
+                  رمز الموظف <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="extend-day-employee-code"
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={4}
+                  pattern="\d{4}"
+                  dir="ltr"
+                  autoFocus
+                  autoComplete="new-password"
+                  name="extend-day-employee-code"
+                  className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-mono tracking-widest text-center text-lg disabled:opacity-60 [-webkit-text-security:disc]"
+                  placeholder="••••"
+                  value={extendDayEmployeeCode}
+                  onChange={(e) =>
+                    setExtendDayEmployeeCode(e.target.value.replace(/\D/g, '').slice(0, 4))
+                  }
+                  disabled={extendDayMutation.isPending}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      confirmExtendDayWithEmployeeCode();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 px-5 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/90 dark:bg-gray-900/40">
+              <button
+                type="button"
+                onClick={() => {
+                  if (extendDayMutation.isPending) return;
+                  closeExtendDayModal();
+                }}
+                disabled={extendDayMutation.isPending}
+                className="w-full sm:w-auto px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={confirmExtendDayWithEmployeeCode}
+                disabled={
+                  extendDayMutation.isPending || !/^\d{4}$/.test(extendDayEmployeeCode.trim())
+                }
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md disabled:opacity-50 disabled:cursor-not-allowed min-w-[120px]"
+              >
+                {extendDayMutation.isPending ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                    جاري التمديد...
+                  </>
+                ) : (
+                  'تأكيد التمديد'
+                )}
+              </button>
             </div>
           </div>
         </div>

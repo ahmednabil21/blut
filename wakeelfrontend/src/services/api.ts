@@ -2224,6 +2224,18 @@ class ApiService {
       hasDebt,
       zone: row.address != null ? String(row.address) : row.zone != null ? String(row.zone) : null,
       fat: row.city != null ? String(row.city) : row.fat != null ? String(row.fat) : null,
+      parentUsername:
+        row.parent_username != null
+          ? String(row.parent_username)
+          : row.parentUsername != null
+            ? String(row.parentUsername)
+            : null,
+      debtDays: (() => {
+        const raw = row.debt_days ?? row.debtDays;
+        if (raw == null || raw === '') return undefined;
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : undefined;
+      })(),
     };
   }
 
@@ -2664,8 +2676,13 @@ class ApiService {
   async executeExtendDay(body: {
     username?: string;
     sasUserId?: number;
+    employee_code: string;
   }): Promise<ExtendDayExecuteResponse> {
-    const payload: Record<string, unknown> = {};
+    const empCode = body.employee_code.trim();
+    if (!/^\d{4}$/.test(empCode)) {
+      throw new Error('رمز الموظف مطلوب — 4 أرقام');
+    }
+    const payload: Record<string, unknown> = { employee_code: empCode };
     if (body.username?.trim()) payload.username = body.username.trim();
     if (body.sasUserId != null && Number.isFinite(body.sasUserId)) {
       payload.sas_user_id = body.sasUserId;

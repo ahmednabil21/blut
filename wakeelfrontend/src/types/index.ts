@@ -2165,6 +2165,10 @@ export interface Subscriber {
   fat?: string | null;
   /** المنطقة (اختياري، حد أقصى 200 حرف) */
   zone?: string | null;
+  /** SAS parent_username — يُعرض في عمود «الزون» بعد إزالة بادئة التاريخ */
+  parentUsername?: string | null;
+  /** 0 = يمكن تمديد يوم واحد، 1 = استُخدم التمديد */
+  debtDays?: number | null;
   /** صيانات مكتملة مرتبطة بالمشترك (من مهام الموظفين)، من الأحدث للأقدم */
   maintenanceRecords?: SubscriberMaintenanceRecordDto[];
   /** ملخص إرسالات واتساب وسجل محاولات (يُملأ من تفاصيل المشترك بالمعرّف) */
@@ -3140,17 +3144,18 @@ export type CardLatestFromSasResponse = ActivateLatestCardResponse;
 
 /** GET /api/subscribers/extend-day/status — زر تمديد يوم (1-DAY) */
 export interface ExtendDayStatusResponse {
-  username: string;
-  sas_user_id: number;
+  username?: string;
+  sas_user_id?: number;
+  debt_days?: number;
   profile_id?: number;
   profile_name?: string | null;
   package_id?: number | null;
   package_name?: string;
-  used_this_month: boolean;
-  eligible: boolean;
+  used_this_month?: boolean;
+  eligible?: boolean;
   can_execute: boolean;
   button_color: 'green' | 'red';
-  button_disabled: boolean;
+  button_disabled?: boolean;
   message_ar?: string;
   provider_type?: string;
   package_error?: string | null;
