@@ -65,6 +65,7 @@ import {
 } from '../utils/subscriberListFiltersStorage';
 import { PythonActivateWizard } from '../components/activation/PythonActivateWizard';
 import { SubscriberExtendDayIcon } from '../components/subscribers/SubscriberExtendDayIcon';
+import { canExtendByDebtDays } from '../utils/subscriberDebtDays';
 import {
   daysUntilExpiration,
   calendarDaysBetween,
@@ -2014,7 +2015,7 @@ const SubscribersPage: React.FC = () => {
   };
 
   const openExtendDayModal = (subscriber: Subscriber) => {
-    if (subscriber.debtDays !== 0) {
+    if (!canExtendByDebtDays(subscriber.debtDays)) {
       showInfo('تمديد', 'تم استخدام التمديد لهذا المشترك — غير متاح حالياً');
       return;
     }
@@ -2030,7 +2031,7 @@ const SubscribersPage: React.FC = () => {
   const extendDayMutation = useMutation({
     mutationFn: async (vars: { subscriber: Subscriber; employeeCode: string }) => {
       const sub = vars.subscriber;
-      if (sub.debtDays !== 0) {
+      if (!canExtendByDebtDays(sub.debtDays)) {
         throw new Error('لا يمكن التمديد — تم استخدام التمديد هذا الشهر');
       }
       const username = (sub.username ?? sub.deviceUsername ?? '').trim();
@@ -4173,23 +4174,20 @@ const SubscribersPage: React.FC = () => {
           <table className="min-w-full text-right">
             <thead>
               <tr>
-                <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 w-10">
-                  <button onClick={toggleSelectAll} className="p-1" aria-label="تحديد الكل">
-                    {subscribers && selectedIds.length === subscribers.length && subscribers.length > 0 ? (
-                      <CheckSquare className="h-3 w-3 sm:h-4 sm:w-4 text-primary-600" />
-                    ) : (
-                      <Square className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400" />
+                <th className="px-2 sm:px-4 lg:px-6 py-2 sm:py-3 min-w-[4.5rem]" title={isPythonBackend() ? 'تحديد / تمديد يوم' : 'تحديد'}>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={toggleSelectAll} className="p-1" aria-label="تحديد الكل">
+                      {subscribers && selectedIds.length === subscribers.length && subscribers.length > 0 ? (
+                        <CheckSquare className="h-3 w-3 sm:h-4 sm:w-4 text-primary-600" />
+                      ) : (
+                        <Square className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400" />
+                      )}
+                    </button>
+                    {isPythonBackend() && (
+                      <CalendarPlus className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-400 shrink-0" aria-hidden />
                     )}
-                  </button>
+                  </div>
                 </th>
-                {isPythonBackend() && (
-                  <th
-                    className="px-1 sm:px-2 py-2 sm:py-3 w-12 text-center"
-                    title="تمديد يوم واحد"
-                  >
-                    <CalendarPlus className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-400 mx-auto" aria-hidden />
-                  </th>
-                )}
                 {orderedTableColumns.map(({ id, label }) => {
                   const isActive = sortColumn === id;
                   const SortIcon = isActive ? (sortDescending ? ArrowDown : ArrowUp) : null;
@@ -4227,24 +4225,24 @@ const SubscribersPage: React.FC = () => {
                   })}
                 >
                   <td className="px-2 sm:px-4 lg:px-6 py-2 sm:py-4">
-                    <button onClick={() => toggleSelectOne(subscriber.id)} className="p-1" aria-label="تحديد">
-                      {selectedIds.includes(subscriber.id) ? (
-                        <CheckSquare className="h-3 w-3 sm:h-4 sm:w-4 text-primary-600" />
-                      ) : (
-                        <Square className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400" />
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => toggleSelectOne(subscriber.id)} className="p-1 shrink-0" aria-label="تحديد">
+                        {selectedIds.includes(subscriber.id) ? (
+                          <CheckSquare className="h-3 w-3 sm:h-4 sm:w-4 text-primary-600" />
+                        ) : (
+                          <Square className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400" />
+                        )}
+                      </button>
+                      {isPythonBackend() && (
+                        <SubscriberExtendDayIcon
+                          debtDays={subscriber.debtDays}
+                          loading={extendDayRowId === subscriber.id && extendDayMutation.isPending}
+                          disabled={extendDayMutation.isPending}
+                          onExtend={() => openExtendDayModal(subscriber)}
+                        />
                       )}
-                    </button>
+                    </div>
                   </td>
-                  {isPythonBackend() && (
-                    <td className="px-1 sm:px-2 py-2 sm:py-4 text-center">
-                      <SubscriberExtendDayIcon
-                        debtDays={subscriber.debtDays}
-                        loading={extendDayRowId === subscriber.id && extendDayMutation.isPending}
-                        disabled={extendDayMutation.isPending}
-                        onExtend={() => openExtendDayModal(subscriber)}
-                      />
-                    </td>
-                  )}
                   {orderedTableColumns.map(({ id }) => renderSubscriberTableCell(subscriber, id))}
                 </tr>
               ))}

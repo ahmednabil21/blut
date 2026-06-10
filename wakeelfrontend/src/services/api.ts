@@ -7,6 +7,7 @@ import {
 import { normalizeUser, normalizeUserList } from '../utils/normalizeUser';
 import { normalizeActivationRecord } from '../utils/activationRecord';
 import { parseOnlineStatusFromRow } from '../utils/subscriberOnlineStatus';
+import { extractDebtDaysFromSubscriberRow } from '../utils/subscriberDebtDays';
 
 import { 
   LoginRequest, 
@@ -51,7 +52,6 @@ import {
   ActivateSubscriberRequest,
   ActivateSubscriberResponse,
   ActivateStatusResponse,
-  ExtendDayStatusResponse,
   ExtendDayExecuteResponse,
   ActivationRecord,
   ActivationTypesResponse,
@@ -2230,12 +2230,7 @@ class ApiService {
           : row.parentUsername != null
             ? String(row.parentUsername)
             : null,
-      debtDays: (() => {
-        const raw = row.debt_days ?? row.debtDays;
-        if (raw == null || raw === '') return undefined;
-        const n = Number(raw);
-        return Number.isFinite(n) ? n : undefined;
-      })(),
+      debtDays: extractDebtDaysFromSubscriberRow(row),
     };
   }
 
@@ -2648,26 +2643,6 @@ class ApiService {
     const response = await this.api.get<ActivateStatusResponse>(
       `/activate/status/${encodeURIComponent(id)}`,
       { timeout: 30_000 }
-    );
-    return response.data;
-  }
-
-  /** GET /api/subscribers/extend-day/status — هل يمكن تمديد 1-DAY هذا الشهر؟ */
-  async getExtendDayStatus(params: {
-    username?: string;
-    sasUserId?: number;
-  }): Promise<ExtendDayStatusResponse> {
-    const response = await this.api.get<ExtendDayStatusResponse>(
-      '/subscribers/extend-day/status',
-      {
-        params: {
-          ...(params.username?.trim() ? { username: params.username.trim() } : {}),
-          ...(params.sasUserId != null && Number.isFinite(params.sasUserId)
-            ? { sas_user_id: params.sasUserId }
-            : {}),
-        },
-        timeout: 60_000,
-      }
     );
     return response.data;
   }
