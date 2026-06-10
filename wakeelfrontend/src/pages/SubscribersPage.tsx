@@ -5451,33 +5451,78 @@ const SubscribersPage: React.FC = () => {
       {showReceiptModal && lastReceipt && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-sm mx-4 overflow-hidden"
+            className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md mx-4 overflow-hidden"
             role="alertdialog"
             aria-labelledby="post-activation-title"
             aria-describedby="post-activation-desc"
           >
-            <div className="p-6 text-center">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
-                <Check className="h-6 w-6 text-green-600 dark:text-green-400" />
-              </div>
-              <h2
-                id="post-activation-title"
-                className="text-lg font-semibold text-gray-900 dark:text-white mb-2"
-              >
-                تم التفعيل بنجاح
-              </h2>
-              <p id="post-activation-desc" className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                رقم الفاتورة: <span className="font-medium text-gray-900 dark:text-white">{lastReceipt.receiptNumber}</span>
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                {lastReceipt.subscriberName}
-                {lastReceipt.newProfileName ? ` — ${lastReceipt.newProfileName}` : ''}
-              </p>
-              {(lastReceipt.remainingAmount ?? 0) > 0 && (
-                <p className="text-sm font-medium text-amber-700 dark:text-amber-300 mt-2">
-                  تم تسجيل دين: {formatNumber(lastReceipt.remainingAmount ?? 0, { suffix: ' د.ع' })}
+            <div className="p-6">
+              <div className="text-center mb-4">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
+                  <Check className="h-6 w-6 text-green-600 dark:text-green-400" />
+                </div>
+                <h2
+                  id="post-activation-title"
+                  className="text-lg font-semibold text-gray-900 dark:text-white"
+                >
+                  تم التفعيل بنجاح
+                </h2>
+                <p id="post-activation-desc" className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  رقم الفاتورة:{' '}
+                  <span className="font-medium text-gray-900 dark:text-white tabular-nums">
+                    {lastReceipt.receiptNumber}
+                  </span>
                 </p>
-              )}
+              </div>
+
+              <div className="rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50/80 dark:bg-gray-900/40 divide-y divide-gray-200 dark:divide-gray-600 text-sm">
+                <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+                  <span className="text-gray-500 dark:text-gray-400 shrink-0">اسم المشترك</span>
+                  <span className="font-medium text-gray-900 dark:text-white text-end">
+                    {lastReceipt.subscriberName?.trim() || '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+                  <span className="text-gray-500 dark:text-gray-400 shrink-0">تاريخ التفعيل</span>
+                  <span className="font-medium text-gray-900 dark:text-white tabular-nums text-end">
+                    {formatSubscriberTableDateTime(
+                      lastReceipt.renewalDate || lastReceipt.createdAt,
+                      locale
+                    ) || '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+                  <span className="text-gray-500 dark:text-gray-400 shrink-0">تاريخ الانتهاء</span>
+                  <span className="font-medium text-gray-900 dark:text-white tabular-nums text-end">
+                    {lastReceipt.newExpirationDate
+                      ? formatSubscriberTableDateTime(lastReceipt.newExpirationDate, locale) ||
+                        formatDate(lastReceipt.newExpirationDate)
+                      : '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+                  <span className="text-gray-500 dark:text-gray-400 shrink-0">المبلغ الواصل</span>
+                  <span className="font-semibold text-emerald-700 dark:text-emerald-300 tabular-nums text-end">
+                    {formatNumber(lastReceipt.amountPaid ?? 0, { suffix: ' د.ع' })}
+                  </span>
+                </div>
+                {lastReceipt.newProfileName ? (
+                  <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+                    <span className="text-gray-500 dark:text-gray-400 shrink-0">الباقة</span>
+                    <span className="font-medium text-gray-900 dark:text-white text-end">
+                      {lastReceipt.newProfileName}
+                    </span>
+                  </div>
+                ) : null}
+                {(lastReceipt.remainingAmount ?? 0) > 0 && (
+                  <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-amber-50/80 dark:bg-amber-950/20">
+                    <span className="text-amber-700 dark:text-amber-300 shrink-0">متبقي (دين)</span>
+                    <span className="font-semibold text-amber-800 dark:text-amber-200 tabular-nums text-end">
+                      {formatNumber(lastReceipt.remainingAmount ?? 0, { suffix: ' د.ع' })}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex flex-col gap-2 p-4 pt-0 border-t border-gray-200 dark:border-gray-700">
               <button
