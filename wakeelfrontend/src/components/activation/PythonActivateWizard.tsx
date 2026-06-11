@@ -1,6 +1,6 @@
 import React from 'react';
 import { ChevronRight, RefreshCw } from 'lucide-react';
-import type { ActivatePackageItem } from '../../types';
+import type { ActivatePackageItem, ActivatePaymentMethodOption } from '../../types';
 import { packageAvailableCount, packageIsActivatable } from '../../utils/activatePackages';
 
 type FormatNumberFn = (value: number, opts?: { suffix?: string }) => string;
@@ -14,8 +14,11 @@ export interface PythonActivateWizardProps {
   selectedPackage: ActivatePackageItem | null;
   packagePrice: number | null;
   amountPaid: number;
+  paymentMethods: ActivatePaymentMethodOption[];
+  selectedPaymentMethod: number;
   onSelectPackage: (packageKey: string) => void;
   onAmountPaidChange: (value: number) => void;
+  onPaymentMethodChange: (value: number) => void;
   onBack: () => void;
   formatNumber: FormatNumberFn;
   showError: (err: unknown) => string;
@@ -32,8 +35,11 @@ export function PythonActivateWizard({
   selectedPackage,
   packagePrice,
   amountPaid,
+  paymentMethods,
+  selectedPaymentMethod,
   onSelectPackage,
   onAmountPaidChange,
+  onPaymentMethodChange,
   onBack,
   formatNumber,
   showError,
@@ -137,6 +143,32 @@ export function PythonActivateWizard({
           disabled={isActivating}
           className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed"
         />
+      </div>
+
+      <div>
+        <label className="block text-sm text-gray-600 dark:text-gray-400 mb-2">طريقة الدفع</label>
+        <div className="grid grid-cols-3 gap-2">
+          {paymentMethods.map((pm) => {
+            const value = pm.value ?? pm.id;
+            const selected = selectedPaymentMethod === value;
+            const label = pm.label_ar || pm.label_en || String(value);
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => !isActivating && onPaymentMethodChange(value)}
+                disabled={isActivating}
+                className={`rounded-xl border px-2 py-3 text-center text-sm font-semibold transition-colors min-h-[3.25rem] ${
+                  selected
+                    ? 'border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200 dark:border-emerald-500 shadow-sm'
+                    : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:border-emerald-400'
+                } disabled:opacity-60 disabled:cursor-not-allowed`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {remaining > 0 && (

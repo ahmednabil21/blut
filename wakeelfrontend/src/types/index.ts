@@ -2496,6 +2496,9 @@ export interface RenewalReceipt {
   cardOwner?: string | null;
   activationPin?: string | null;
   activationTransaction?: string | null;
+  /** طريقة الدفع عند التفعيل — من GET /api/activations */
+  paymentMethod?: number | null;
+  paymentMethodLabel?: string | null;
 }
 
 /** حالة مزامنة SAS في الخلفية — GET /api/subscribers */
@@ -3247,9 +3250,18 @@ export interface ActivationMethodTypeOption {
   note_ar?: string;
 }
 
+/** خيار طريقة الدفع — GET /api/activate/payment-methods */
+export interface ActivatePaymentMethodOption {
+  id: number;
+  value: number;
+  label_ar?: string;
+  label_en?: string;
+}
+
 export interface ActivationTypesResponse {
   activation_methods: ActivationMethodTypeOption[];
   master_types?: { id: string; label_ar?: string }[];
+  payment_methods?: ActivatePaymentMethodOption[];
 }
 
 export interface ActivateModesResponse {
@@ -3276,6 +3288,8 @@ export interface ActivateSubscriberRequest {
   amount_paid?: number;
   /** رمز الموظف المنفّذ — 4 أرقام */
   employee_code?: string;
+  /** 1=كاش، 2=ماستر كارد، 3=POS — مطلوب عند mock=false */
+  payment_method?: number;
 }
 
 export type ActivateRequestStatus =
@@ -3344,6 +3358,9 @@ export interface ActivationRecord {
   profile_details?: ActivationProfileDetails | null;
   master_type?: string | null;
   master_type_label?: string | null;
+  /** 1=كاش، 2=ماستر كارد، 3=POS */
+  payment_method?: number | null;
+  payment_method_label?: string | null;
 }
 
 export interface ActivationsListParams {
@@ -3357,6 +3374,8 @@ export interface ActivationsListParams {
   username?: string | null;
   /** بحث موحّد: اسم أو يوزر أو PIN */
   search?: string | null;
+  /** 1=كاش، 2=ماستر كارد، 3=POS */
+  payment_method?: number | null;
 }
 
 /** GET /api/activations */

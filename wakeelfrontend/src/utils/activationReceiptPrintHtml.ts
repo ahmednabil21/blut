@@ -521,13 +521,18 @@ function pickSubscriberPasswordFromRenewalLike(r: Record<string, unknown>): stri
   ]);
 }
 
-export function formatActivationReceiptPaymentMethod(raw?: string | null): string {
+export function formatActivationReceiptPaymentMethod(raw?: string | number | null): string {
   if (raw == null || String(raw).trim() === '') return 'كاش';
   const v = String(raw).trim();
+  const n = Number(v);
+  if (n === 1) return 'كاش';
+  if (n === 2) return 'ماستر كارد';
+  if (n === 3) return 'POS جهاز';
   const lower = v.toLowerCase();
   if (lower === 'card') return 'بطاقة دفع';
   if (lower === 'wallet') return 'محفظة الرصيد';
   if (lower === 'cash') return 'كاش';
+  if (v === 'كاش' || v === 'ماستر كارد' || v === 'POS جهاز') return v;
   return v;
 }
 
@@ -568,9 +573,10 @@ export function renewalLikeToActivationPrintPayload(r: Record<string, unknown>):
     subscriberUsername: subscriberUsername || undefined,
     subscriberPassword: pickSubscriberPasswordFromRenewalLike(r) || undefined,
     paymentMethod:
-      (r.paymentMethod ?? r.PaymentMethod ?? null) != null
+      pickStringFromRecord(r, ['paymentMethodLabel', 'payment_method_label']) ||
+      ((r.paymentMethod ?? r.PaymentMethod ?? null) != null
         ? String(r.paymentMethod ?? r.PaymentMethod)
-        : undefined,
+        : undefined),
     agentPhone: pickStringFromRecord(r, ['agentPhone', 'AgentPhone']) || undefined,
     agentAddress: pickStringFromRecord(r, ['agentAddress', 'AgentAddress']) || undefined,
     agentCompanyName: pickStringFromRecord(r, ['agentCompanyName', 'AgentCompanyName']) || undefined,
@@ -907,7 +913,7 @@ export function buildActivationReceiptPrintHtml(
     ${fieldRow('فئة الاشتراك:', receipt.newProfileName || '—')}
     ${fieldRow('مبلغ الاشتراك:', `${fmtNum(subscriptionAmount)}`)}
     ${fieldRow('تاريخ انتهاء الاشتراك:', expiryStr || '—')}
-    ${fieldRow('طريقة الدفع', `: ${paymentLabel}`)}
+    ${fieldRow('طريقة الدفع:', paymentLabel)}
     <div class="activator-row">المفعل : ${escapeHtml(activator || '—')}</div>
     <div class="legal-note">${escapeHtml(borrowNote)}</div>
     <div class="qr-intro">للمزيد من المعلومات يمكن الاتصال على الارقام التالية او عبر مسح رمز الـ QR</div>

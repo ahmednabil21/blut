@@ -25,6 +25,10 @@ import {
   sortActivationRecordsNewestFirst,
 } from '../utils/activationRecord';
 import { getSelectedResellerId, setSelectedResellerId } from '../utils/selectedReseller';
+import {
+  DEFAULT_ACTIVATE_PAYMENT_METHODS,
+  paymentMethodLabel,
+} from '../utils/activatePaymentMethods';
 import { RenewalReceipt, PaymentStatus, ActivationType, AgentReseller, UserRole } from '../types';
 import WifiLoaderComponent from '../components/WifiLoaderComponent';
 import { 
@@ -67,6 +71,8 @@ const ReceiptsPage: React.FC = () => {
   const [subscriberUsernameFilter, setSubscriberUsernameFilter] = useState('');
   const [appliedSubscriberName, setAppliedSubscriberName] = useState('');
   const [appliedSubscriberUsername, setAppliedSubscriberUsername] = useState('');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<number | ''>('');
+  const [appliedPaymentMethodFilter, setAppliedPaymentMethodFilter] = useState<number | ''>('');
   const [showFiltersModal, setShowFiltersModal] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const pythonBackend = isPythonBackend();
@@ -118,6 +124,11 @@ const ReceiptsPage: React.FC = () => {
     [activationTypesData?.activation_methods]
   );
 
+  const paymentMethodOptions = useMemo(
+    () => activationTypesData?.payment_methods ?? DEFAULT_ACTIVATE_PAYMENT_METHODS,
+    [activationTypesData?.payment_methods]
+  );
+
   const activationsHistoryHint = activateModesData?.config?.activations_history;
 
   /** بحث محلي على الصفحة الحالية فقط */
@@ -154,6 +165,7 @@ const ReceiptsPage: React.FC = () => {
       appliedSubscriberUsername || null,
       appliedMasterType || null,
       appliedActivationMethod || null,
+      pythonBackend ? appliedPaymentMethodFilter || null : null,
       pythonBackend ? selectedOperationalResellerId || null : null,
     ],
     queryFn: async () => {
@@ -166,6 +178,8 @@ const ReceiptsPage: React.FC = () => {
           search: appliedSearchTerm.trim() || undefined,
           subscriber_name: appliedSubscriberName.trim() || undefined,
           username: appliedSubscriberUsername.trim() || undefined,
+          payment_method:
+            appliedPaymentMethodFilter !== '' ? appliedPaymentMethodFilter : undefined,
         });
         const receipts = sortActivationRecordsNewestFirst(res.data).map(mapActivationToRenewalReceipt);
         setTotalItems(res.totalItems ?? receipts.length);
@@ -281,7 +295,8 @@ const ReceiptsPage: React.FC = () => {
         appliedActivationMethod ||
         appliedSearchTerm ||
         appliedSubscriberName ||
-        appliedSubscriberUsername
+        appliedSubscriberUsername ||
+        appliedPaymentMethodFilter !== ''
       )
     : !!(appliedFromDate || appliedToDate || appliedMasterType || appliedSearchTerm);
 
@@ -295,6 +310,7 @@ const ReceiptsPage: React.FC = () => {
     setAppliedSubscriberUsername(subscriberUsernameFilter.trim());
     setAppliedMasterType(masterTypeFilter);
     setAppliedActivationMethod(activationMethodFilter);
+    setAppliedPaymentMethodFilter(paymentMethodFilter);
     setCurrentPage(1);
     if (closeModal) setShowFiltersModal(false);
   };
@@ -302,6 +318,7 @@ const ReceiptsPage: React.FC = () => {
   const openFiltersModal = () => {
     setMasterTypeFilter(appliedMasterType);
     setActivationMethodFilter(appliedActivationMethod);
+    setPaymentMethodFilter(appliedPaymentMethodFilter);
     setSubscriberNameFilter(appliedSubscriberName);
     setSubscriberUsernameFilter(appliedSubscriberUsername);
     setShowFiltersModal(true);
@@ -318,6 +335,8 @@ const ReceiptsPage: React.FC = () => {
     setAppliedMasterType('');
     setActivationMethodFilter('');
     setAppliedActivationMethod('');
+    setPaymentMethodFilter('');
+    setAppliedPaymentMethodFilter('');
     setCurrentPage(1);
     setShowFiltersModal(false);
     if (!pythonBackend) {
@@ -384,9 +403,13 @@ const ReceiptsPage: React.FC = () => {
 
     const embeddedImages = await embedActivationReceiptStaticImages(appOrigin);
 
+    const receiptPayment =
+      receipt.paymentMethodLabel?.trim() ||
+      (receipt.paymentMethod != null ? String(receipt.paymentMethod) : '');
     const printPayload = enrichActivationPrintPayload(
       renewalLikeToActivationPrintPayload(receipt as unknown as Record<string, unknown>),
       {
+        paymentMethod: receiptPayment || undefined,
         serviceType: myAgent?.serviceType,
         agentCompanyName: receipt.agentCompanyName ?? myAgent?.companyName,
       }
@@ -620,6 +643,11 @@ const ReceiptsPage: React.FC = () => {
               نوع السجل: {formatActivationMethodAr(appliedActivationMethod)} ({appliedActivationMethod})
             </p>
           )}
+          {pythonBackend && appliedPaymentMethodFilter !== '' && (
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              طريقة الدفع: {paymentMethodLabel(paymentMethodOptions, appliedPaymentMethodFilter)}
+            </p>
+          )}
         </div>
         {isAgentOrSubAgentOrEmployee && myResellers.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
@@ -790,9 +818,14 @@ const ReceiptsPage: React.FC = () => {
                   الباقة
                 </th>
                 {pythonBackend && (
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    طريقة التفعيل
-                  </th>
+                  <>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      طريقة التفعيل
+                    </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      طريقة الدفع
+                    </th>
+                  </>
                 )}
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   الإجراءات
@@ -875,9 +908,16 @@ const ReceiptsPage: React.FC = () => {
                     )}
                   </td>
                   {pythonBackend && (
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {renderActivationMethodBadge(receipt)}
-                    </td>
+                    <>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {renderActivationMethodBadge(receipt)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                        {receipt.paymentMethodLabel ||
+                          paymentMethodLabel(paymentMethodOptions, receipt.paymentMethod) ||
+                          '—'}
+                      </td>
+                    </>
                   )}
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex items-center space-x-2">
@@ -1182,6 +1222,42 @@ const ReceiptsPage: React.FC = () => {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  طريقة الدفع
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethodFilter('')}
+                    className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                      paymentMethodFilter === ''
+                        ? 'border-primary-600 bg-primary-50 text-primary-800 dark:bg-primary-950/40 dark:text-primary-200'
+                        : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    الكل
+                  </button>
+                  {paymentMethodOptions.map((pm) => {
+                    const value = pm.value ?? pm.id;
+                    const selected = paymentMethodFilter === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setPaymentMethodFilter(value)}
+                        className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                          selected
+                            ? 'border-primary-600 bg-primary-50 text-primary-800 dark:bg-primary-950/40 dark:text-primary-200'
+                            : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        {pm.label_ar || pm.label_en || String(value)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   تصنيف الماستر (اختياري)
                 </label>
@@ -1205,6 +1281,7 @@ const ReceiptsPage: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setActivationMethodFilter('');
+                  setPaymentMethodFilter('');
                   setMasterTypeFilter('');
                   setSubscriberNameFilter('');
                   setSubscriberUsernameFilter('');

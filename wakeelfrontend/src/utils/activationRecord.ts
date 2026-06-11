@@ -56,6 +56,14 @@ export function normalizeActivationRecord(raw: unknown): ActivationRecord {
       : null,
     master_type: (r.master_type ?? r.masterType) as string | null,
     master_type_label: (r.master_type_label ?? r.masterTypeLabel) as string | null,
+    payment_method: (() => {
+      const raw = r.payment_method ?? r.paymentMethod;
+      if (raw == null || raw === '') return null;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : null;
+    })(),
+    payment_method_label:
+      ((r.payment_method_label ?? r.paymentMethodLabel) as string | null) ?? null,
   };
 }
 
@@ -111,6 +119,8 @@ export function mapActivationToRenewalReceipt(row: ActivationRecord): RenewalRec
     cardOwner: row.card_owner ?? null,
     activationPin: row.pin ?? null,
     activationTransaction: row.transaction ?? null,
+    paymentMethod: row.payment_method ?? null,
+    paymentMethodLabel: row.payment_method_label ?? null,
   };
 }
 
@@ -147,7 +157,8 @@ export function buildActivateReceiptFromResponse(
   pkg: ActivatePackageItem | null,
   price: number | null,
   res: ActivateSubscriberResponse,
-  paidAmount?: number | null
+  paidAmount?: number | null,
+  payment?: { method?: number | null; label?: string | null }
 ): RenewalReceipt {
   const packagePrice = res.package_price ?? price ?? subscriber.profilePrice ?? 0;
   const amountPaid = res.amount_paid ?? paidAmount ?? packagePrice;
@@ -183,6 +194,8 @@ export function buildActivateReceiptFromResponse(
     createdAt: now,
     agentCompanyName: subscriber.agentCompanyName ?? '',
     activationPin: pin || null,
+    paymentMethod: payment?.method ?? null,
+    paymentMethodLabel: payment?.label?.trim() || null,
   };
   return applyActivateDebtToRenewalReceipt(receipt, res, { packagePrice, amountPaid });
 }

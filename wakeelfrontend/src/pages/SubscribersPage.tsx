@@ -67,6 +67,11 @@ import { PythonActivateWizard } from '../components/activation/PythonActivateWiz
 import { SubscriberExtendDayIcon } from '../components/subscribers/SubscriberExtendDayIcon';
 import { canExtendByDebtDays } from '../utils/subscriberDebtDays';
 import {
+  DEFAULT_ACTIVATE_PAYMENT_METHODS,
+  isValidActivatePaymentMethod,
+  paymentMethodLabel,
+} from '../utils/activatePaymentMethods';
+import {
   daysUntilExpiration,
   calendarDaysBetween,
   subscriberDaysRemaining,
@@ -83,6 +88,7 @@ import {
   buildActivationReceiptPrintHtml,
   embedActivationReceiptStaticImages,
   enrichActivationPrintPayload,
+  formatActivationReceiptPaymentMethod,
   openActivationReceiptPrintWindow,
   renewalLikeToActivationPrintPayload,
   resolveCurrentUserOrganizerDisplayName,
@@ -478,6 +484,8 @@ const SubscribersPage: React.FC = () => {
   const ACTIVATE_RETRY_COOLDOWN_SEC = 10;
   const activateCooldownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [activateCooldownSec, setActivateCooldownSec] = useState(0);
+  /** طريقة الدفع — 1 كاش، 2 ماستر كارد، 3 POS */
+  const [activatePaymentMethod, setActivatePaymentMethod] = useState(1);
   /** جاهزية POST /resellers/{id}/select قبل جلب الباقات */
   const [activateResellerReady, setActivateResellerReady] = useState(false);
   const activateResellerSelectRef = useRef<Promise<void> | null>(null);
@@ -810,6 +818,13 @@ const SubscribersPage: React.FC = () => {
   }, [selectedSubscriber]);
   const pythonActivateResellerId = activateModalResellerId.trim();
 
+  const { data: activatePaymentMethods = DEFAULT_ACTIVATE_PAYMENT_METHODS } = useQuery({
+    queryKey: ['activate-payment-methods'],
+    queryFn: () => apiService.getActivatePaymentMethods(),
+    enabled: showRenewalModal && isPythonBackend(),
+    staleTime: 600_000,
+  });
+
   const {
     data: activatePackagesBundle,
     isLoading: activatePackagesLoading,
@@ -886,6 +901,7 @@ const SubscribersPage: React.FC = () => {
       debtDueDate: '',
     }));
     setAmountReceivedInFull(true);
+    setActivatePaymentMethod(1);
     setPythonActivateStep(2);
   };
 
@@ -1952,6 +1968,7 @@ const SubscribersPage: React.FC = () => {
     clearActivateRetryCooldown();
     setActivateEmployeeCode('');
     setShowActivateEmployeeConfirm(false);
+    setActivatePaymentMethod(1);
     setAmountReceivedInFull(true);
     clearSubscriberSelection();
   }, [clearActivateRetryCooldown, clearSubscriberSelection]);
@@ -1998,6 +2015,7 @@ const SubscribersPage: React.FC = () => {
     setActivateEmployeeCode('');
     activateRequestIdRef.current = createActivateRequestId();
     setActivateVerifying(false);
+    setActivatePaymentMethod(1);
     clearActivateRetryCooldown();
     setRenewalData((prev) => ({
       ...prev,
@@ -2097,7 +2115,10 @@ const SubscribersPage: React.FC = () => {
       const debtSuffix = formatActivateDebtSuccessSuffix(res, formatNumber);
 
       if (sub && username) {
-        const receipt = buildActivateReceiptFromResponse(sub, pkg, price, res, paidAmount);
+        const receipt = buildActivateReceiptFromResponse(sub, pkg, price, res, paidAmount, {
+          method: activatePaymentMethod,
+          label: paymentMethodLabel(activatePaymentMethods, activatePaymentMethod),
+        });
         setLastReceipt(receipt);
         setShowReceiptModal(true);
 
@@ -2142,6 +2163,8 @@ const SubscribersPage: React.FC = () => {
       );
     },
     [
+      activatePaymentMethod,
+      activatePaymentMethods,
       activateUsername,
       closeRenewalModal,
       formatNumber,
@@ -2193,6 +2216,7 @@ const SubscribersPage: React.FC = () => {
         package_price: packagePrice,
         amount_paid: amountPaid,
         employee_code: activateEmployeeCode.trim(),
+        payment_method: activatePaymentMethod,
       });
     },
     onSuccess: (res) => {
@@ -2838,6 +2862,10 @@ const SubscribersPage: React.FC = () => {
       showError('الباقة', 'لا يوجد سعر معرّف لهذه الباقة.');
       return;
     }
+    if (!isValidActivatePaymentMethod(activatePaymentMethod)) {
+      showError('طريقة الدفع', 'اختر طريقة الدفع');
+      return;
+    }
 
     const subId = String(
       selectedSubscriberForRenewal?.id ?? selectedSubscriberForRenewal?.secruptionId ?? ''
@@ -2958,12 +2986,15 @@ const SubscribersPage: React.FC = () => {
     const linkedReseller =
       myResellers.find((r) => r.id === (sub?.agentResellerId ?? '').trim()) ??
       myResellers.find((r) => r.id === selectedOperationalResellerId);
+    const receiptPayment =
+      receipt.paymentMethodLabel?.trim() ||
+      (receipt.paymentMethod != null ? String(receipt.paymentMethod) : '');
     const printPayload = enrichActivationPrintPayload(
       renewalLikeToActivationPrintPayload(receipt as Record<string, unknown>),
       {
         username: sub?.username,
         deviceUsername: sub?.deviceUsername,
-        paymentMethod: sub?.paymentMethod,
+        paymentMethod: receiptPayment || sub?.paymentMethod || undefined,
         serviceType: linkedReseller?.serviceType ?? myAgent?.serviceType,
         resellerName: sub?.agentResellerName ?? linkedReseller?.name,
         agentCompanyName: sub?.agentCompanyName ?? myAgent?.companyName ?? receipt.agentCompanyName,
@@ -4701,8 +4732,11 @@ const SubscribersPage: React.FC = () => {
                       selectedPackage={selectedActivatePackage}
                       packagePrice={pythonPackagePrice}
                       amountPaid={renewalData.amountPaid ?? 0}
+                      paymentMethods={activatePaymentMethods}
+                      selectedPaymentMethod={activatePaymentMethod}
                       onSelectPackage={handlePythonSelectPackage}
                       onAmountPaidChange={handlePythonAmountPaidChange}
+                      onPaymentMethodChange={setActivatePaymentMethod}
                       onBack={() => {
                         if (!pythonActivateBusy) setPythonActivateStep(1);
                       }}
@@ -5504,6 +5538,14 @@ const SubscribersPage: React.FC = () => {
                   <span className="text-gray-500 dark:text-gray-400 shrink-0">المبلغ الواصل</span>
                   <span className="font-semibold text-emerald-700 dark:text-emerald-300 tabular-nums text-end">
                     {formatNumber(lastReceipt.amountPaid ?? 0, { suffix: ' د.ع' })}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+                  <span className="text-gray-500 dark:text-gray-400 shrink-0">طريقة الدفع</span>
+                  <span className="font-medium text-gray-900 dark:text-white text-end">
+                    {formatActivationReceiptPaymentMethod(
+                      lastReceipt.paymentMethodLabel ?? lastReceipt.paymentMethod
+                    )}
                   </span>
                 </div>
                 {lastReceipt.newProfileName ? (

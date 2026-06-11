@@ -8,6 +8,10 @@ import { normalizeUser, normalizeUserList } from '../utils/normalizeUser';
 import { normalizeActivationRecord } from '../utils/activationRecord';
 import { parseOnlineStatusFromRow } from '../utils/subscriberOnlineStatus';
 import { extractDebtDaysFromSubscriberRow } from '../utils/subscriberDebtDays';
+import {
+  DEFAULT_ACTIVATE_PAYMENT_METHODS,
+  normalizeActivatePaymentMethodOptions,
+} from '../utils/activatePaymentMethods';
 
 import { 
   LoginRequest, 
@@ -55,6 +59,7 @@ import {
   ExtendDayExecuteResponse,
   ActivationRecord,
   ActivationTypesResponse,
+  ActivatePaymentMethodOption,
   ActivationsListParams,
   ActivationsListResponse,
   SubscriberCreateRequest,
@@ -2630,6 +2635,15 @@ class ApiService {
     } else if (empCode) {
       payload.employee_code = empCode;
     }
+    if (!isMock) {
+      const pm = body.payment_method;
+      if (pm == null || !Number.isFinite(Number(pm)) || Number(pm) < 1) {
+        throw new Error('طريقة الدفع مطلوبة');
+      }
+      payload.payment_method = Number(pm);
+    } else if (body.payment_method != null && Number.isFinite(Number(body.payment_method))) {
+      payload.payment_method = Number(body.payment_method);
+    }
     const response = await this.api.post<ActivateSubscriberResponse>('/activate', payload, {
       timeout: 120_000,
     });
@@ -2668,6 +2682,28 @@ class ApiService {
       { timeout: 60_000 }
     );
     return response.data;
+  }
+
+  /** GET /api/activate/payment-methods — كاش / ماستر كارد / POS */
+  async getActivatePaymentMethods(): Promise<ActivatePaymentMethodOption[]> {
+    try {
+      const response = await this.api.get<Record<string, unknown>>('/activate/payment-methods');
+      const body = response.data ?? {};
+      const raw = body.payment_methods ?? body.paymentMethods ?? body;
+      const list = normalizeActivatePaymentMethodOptions(
+        Array.isArray(raw) ? raw : body.payment_methods ?? body.paymentMethods
+      );
+      if (list.length > 0) return list;
+    } catch {
+      /* fallback below */
+    }
+    try {
+      const types = await this.getActivationTypes();
+      if (types.payment_methods?.length) return types.payment_methods;
+    } catch {
+      /* fallback below */
+    }
+    return DEFAULT_ACTIVATE_PAYMENT_METHODS;
   }
 
   /** GET /api/activations/types — أنواع activation_method (voucher، reward_points، …) */
@@ -2727,7 +2763,14 @@ class ApiService {
           })
           .filter((x): x is NonNullable<typeof x> => x != null)
       : undefined;
-    return { activation_methods, master_types };
+    const paymentRaw = body.payment_methods ?? body.paymentMethods;
+    const payment_methods = normalizeActivatePaymentMethodOptions(paymentRaw);
+    return {
+      activation_methods,
+      master_types,
+      payment_methods:
+        payment_methods.length > 0 && paymentRaw != null ? payment_methods : undefined,
+    };
   }
 
   /** GET /api/activations — سجل التفعيلات من SAS */
@@ -2747,6 +2790,9 @@ class ApiService {
           : {}),
         ...(params?.username?.trim() ? { username: params.username.trim() } : {}),
         ...(params?.search?.trim() ? { search: params.search.trim() } : {}),
+        ...(params?.payment_method != null && Number.isFinite(Number(params.payment_method))
+          ? { payment_method: Number(params.payment_method) }
+          : {}),
       },
     });
     const body = response.data ?? {};
