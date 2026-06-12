@@ -6,7 +6,18 @@ const SAS_MESSAGE_AR: Record<string, string> = {
   rsp_invalid_profile: 'الباقة لا تطابق كود الشحن أو المشترك',
   rsp_card_used: 'كود الشحن مستخدم على SAS — جاري تحديث المخزون',
   rsp_success: 'تم التفعيل بنجاح',
+  rsp_success_schedule: 'تم جدولة التفعيل بنجاح',
 };
+
+const SAS_SUCCESS_MESSAGES = new Set(['rsp_success', 'rsp_success_schedule', 'success', 'ok']);
+
+export function isActivateSasSuccessMessage(sasMsg: string | null | undefined): boolean {
+  const v = String(sasMsg ?? '').trim().toLowerCase();
+  if (!v) return true;
+  if (SAS_SUCCESS_MESSAGES.has(v)) return true;
+  if (v.startsWith('rsp_success')) return true;
+  return false;
+}
 
 /** FastAPI detail: نص أو كائن { message, sas_message, hint, ... } */
 export function formatActivateApiDetail(detail: unknown): string | null {
@@ -45,9 +56,26 @@ function getAxiosResponseData(error: unknown): Record<string, unknown> | null {
   return data as Record<string, unknown>;
 }
 
+function isActivateSasTimeoutError(error: unknown, data: Record<string, unknown> | null): boolean {
+  const err = error as { response?: { status?: number }; message?: string };
+  const status = err?.response?.status;
+  if (status === 502 || status === 504) return true;
+  const text = [
+    data?.message,
+    data?.detail,
+    err?.message,
+  ]
+    .map((v) => (typeof v === 'string' ? v : ''))
+    .join(' ');
+  return /sas.*timeout|timeout.*sas|gateway timeout|انتهت مهلة.*sas/i.test(text);
+}
+
 /** رسالة عربية من خطأ تفعيل (POST /api/activate) */
 export function formatActivateApiError(error: unknown): string {
   const data = getAxiosResponseData(error);
+  if (isActivateSasTimeoutError(error, data)) {
+    return 'انتهت مهلة انتظار SAS';
+  }
   if (data?.detail != null) {
     const fromDetail = formatActivateApiDetail(data.detail);
     if (fromDetail) return fromDetail;
@@ -87,11 +115,16 @@ export function isActivateSuccessResponse(res: {
   sasResponse?: unknown;
 }): boolean {
   if (res.success === false) return false;
-  const sasMsg = getActivateSasResponseMessage(res);
-  if (sasMsg && sasMsg !== 'rsp_success' && !['success', 'ok'].includes(sasMsg)) {
-    return false;
+  if (res.success === true) {
+    const sasMsg = getActivateSasResponseMessage(res);
+    if (sasMsg && !isActivateSasSuccessMessage(sasMsg)) {
+      return sasMsg.startsWith('rsp_error') ? false : true;
+    }
+    return true;
   }
-  return res.success === true || res.success == null;
+  const sasMsg = getActivateSasResponseMessage(res);
+  if (sasMsg && !isActivateSasSuccessMessage(sasMsg)) return false;
+  return res.success == null;
 }
 
 export function getActivateDebtRemaining(res: {

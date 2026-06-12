@@ -163,7 +163,11 @@ export function buildActivateReceiptFromResponse(
   const packagePrice = res.package_price ?? price ?? subscriber.profilePrice ?? 0;
   const amountPaid = res.amount_paid ?? paidAmount ?? packagePrice;
   const now = new Date().toISOString();
-  const profileName = pkg?.profile_name?.trim() || subscriber.profileName || '—';
+  const profileName =
+    (res.profile_name ?? '').trim() ||
+    pkg?.profile_name?.trim() ||
+    subscriber.profileName ||
+    '—';
   const pin = (res.card_pin ?? '').trim();
   const newExpiration =
     extractNewExpirationFromActivateResponse(res) || subscriber.expirationDate || '';

@@ -815,7 +815,7 @@ class ApiService {
       409: 'تعارض - البيانات المرسلة تتعارض مع البيانات الموجودة',
       422: 'خطأ في التحقق - البيانات المرسلة غير صحيحة',
       500: 'خطأ داخلي في الخادم - يرجى المحاولة لاحقاً',
-      502: 'خطأ في البوابة - الخادم غير متاح',
+      502: 'انتهت مهلة انتظار SAS',
       503: 'الخدمة غير متاحة - يرجى المحاولة لاحقاً',
       504: 'انتهت مهلة البوابة - الخادم لا يستجيب'
     };
@@ -2518,6 +2518,7 @@ class ApiService {
       profile_name: body.profile_name != null ? String(body.profile_name) : null,
       recommended_series:
         body.recommended_series != null ? String(body.recommended_series) : undefined,
+      series_fallback: body.series_fallback === true,
       series_candidates: Array.isArray(body.series_candidates)
         ? body.series_candidates.map((s) => String(s))
         : undefined,

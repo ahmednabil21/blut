@@ -51,7 +51,7 @@ import {
   shouldPollActivateStatusAfterError,
 } from '../utils/activateIdempotency';
 import { subscriberConnectionRowClass } from '../utils/subscriberOnlineStatus';
-import { packageIsActivatable, parseActivatePackageSelection } from '../utils/activatePackages';
+import { packageIsActivatable, parseActivatePackageSelection, applyActivatePackageSeriesFallback } from '../utils/activatePackages';
 import {
   detectSasPricingHost,
   resolvePackageSalePrice,
@@ -2170,7 +2170,9 @@ const SubscribersPage: React.FC = () => {
       const sasOk = getActivateSasResponseMessage(res);
       const baseMsg =
         (res.message?.trim() ||
-          (sasOk === 'rsp_success' ? 'تم التفعيل بنجاح' : 'تم تفعيل الكارد بنجاح')) + debtSuffix + replayNote;
+          (sasOk === 'rsp_success' || sasOk.startsWith('rsp_success')
+            ? 'تم التفعيل بنجاح'
+            : 'تم تفعيل الكارد بنجاح')) + debtSuffix + replayNote;
       if (partialWarnings) {
         showInfo('تنبيه بعد التفعيل', partialWarnings);
       }
@@ -2217,9 +2219,27 @@ const SubscribersPage: React.FC = () => {
       if (!latestCard.pin?.trim() || !latestCard.series?.trim()) {
         throw new Error('لا يوجد كود متاح على SAS لهذه الباقة');
       }
-      const idempotencyKey = activateIdempotencyKeyRef.current.trim();
+      if (latestCard.series_fallback && activateSelectedPackageKey) {
+        const fallbackSeries = applyActivatePackageSeriesFallback(
+          queryClient,
+          ['activate-packages', pythonActivateResellerId, activateUsername],
+          activateSelectedPackageKey,
+          latestCard
+        );
+        if (fallbackSeries) {
+          showInfo(
+            'السلسلة',
+            `السلسلة ${pkg?.recommended_series ?? '—'} غير متاحة على SAS — تم استخدام سلسلة بديلة: ${fallbackSeries}`
+          );
+        }
+      }
+      let idempotencyKey = activateIdempotencyKeyRef.current.trim();
+      if (!idempotencyKey) {
+        idempotencyKey = createActivateIdempotencyKey();
+        activateIdempotencyKeyRef.current = idempotencyKey;
+      }
       return apiService.activateSubscriber({
-        idempotency_key: idempotencyKey || undefined,
+        idempotency_key: idempotencyKey,
         username,
         card_pin: latestCard.pin.trim(),
         series: latestCard.series.trim(),

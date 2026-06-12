@@ -122,6 +122,15 @@ export function PythonActivateWizard({
         <ChevronRight className="h-4 w-4 text-gray-400 rotate-180" />
       </div>
 
+      {selectedPackage?.recommended_series?.trim() ? (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-4 py-2.5 text-sm">
+          <span className="text-gray-500 dark:text-gray-400">السلسلة: </span>
+          <span className="font-medium text-gray-900 dark:text-white tabular-nums">
+            {selectedPackage.recommended_series.trim()}
+          </span>
+        </div>
+      ) : null}
+
       <div>
         <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">المبلغ</label>
         <input

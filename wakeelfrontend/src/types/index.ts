@@ -3139,6 +3139,8 @@ export interface ActivateLatestCardResponse {
   profile_id?: number | null;
   profile_name?: string | null;
   recommended_series?: string;
+  /** true عند استخدام سلسلة بديلة بعد فشل السلسلة المطلوبة */
+  series_fallback?: boolean;
   series_candidates?: string[];
 }
 
@@ -3298,6 +3300,7 @@ export type ActivateRequestStatus =
   | 'processing'
   | 'completed'
   | 'failed'
+  | 'unknown'
   /** قيم قديمة — للتوافق */
   | 'pending'
   | 'sending'
@@ -3328,6 +3331,9 @@ export interface ActivateSubscriberResponse {
   message?: string;
   username?: string;
   card_pin?: string;
+  series?: string;
+  profile_id?: number;
+  profile_name?: string;
   activation_mode?: string;
   debt_created?: boolean;
   debt_remaining?: number;

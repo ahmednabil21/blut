@@ -42,7 +42,8 @@ export function isActivateConflictError(error: unknown): boolean {
 }
 
 export function isActivateUncertainHttpError(error: unknown): boolean {
-  return getActivateHttpStatus(error) === 503;
+  const status = getActivateHttpStatus(error);
+  return status === 503 || status === 502 || status === 504;
 }
 
 /** هل يُفضّل الاستعلام عن الحالة بدلاً من إعادة إرسال تفعيل جديد؟ */
@@ -99,7 +100,13 @@ export function normalizeActivateStatus(status: string | null | undefined): Norm
     .toLowerCase();
   if (s === 'completed' || s === 'succeeded' || s === 'success') return 'completed';
   if (s === 'failed' || s === 'failure' || s === 'error') return 'failed';
-  if (s === 'processing' || s === 'pending' || s === 'sending' || s === 'in_progress') {
+  if (
+    s === 'processing' ||
+    s === 'pending' ||
+    s === 'sending' ||
+    s === 'in_progress' ||
+    s === 'unknown'
+  ) {
     return 'processing';
   }
   return 'uncertain';

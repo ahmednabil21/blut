@@ -1,4 +1,5 @@
-import type { ActivatePackageItem } from '../types';
+import type { QueryClient } from '@tanstack/react-query';
+import type { ActivateLatestCardResponse, ActivatePackageItem, ActivatePackagesResponse } from '../types';
 
 export function packageAvailableCount(pkg?: ActivatePackageItem | null): number {
   if (!pkg) return 0;
@@ -33,4 +34,28 @@ export function parseActivatePackageSelection(value: string): {
     return { profileName: value.slice(5) };
   }
   return {};
+}
+
+/** بعد series_fallback من latest-card — حدّث recommended_series في كاش الباقات */
+export function applyActivatePackageSeriesFallback(
+  queryClient: QueryClient,
+  queryKey: readonly unknown[],
+  packageKey: string,
+  latestCard: ActivateLatestCardResponse
+): string | null {
+  if (!latestCard.series_fallback) return null;
+  const newSeries = (latestCard.recommended_series ?? latestCard.series ?? '').trim();
+  if (!newSeries) return null;
+
+  queryClient.setQueryData<ActivatePackagesResponse>(queryKey, (old) => {
+    if (!old?.packages?.length) return old;
+    return {
+      ...old,
+      packages: old.packages.map((p) =>
+        p.package_key === packageKey ? { ...p, recommended_series: newSeries } : p
+      ),
+    };
+  });
+
+  return newSeries;
 }
