@@ -36,26 +36,90 @@ export function parseActivatePackageSelection(value: string): {
   return {};
 }
 
-/** بعد series_fallback من latest-card — حدّث recommended_series في كاش الباقات */
-export function applyActivatePackageSeriesFallback(
+/** السلسلة الفعلية من رد latest-card — تفضّل recommended_series */
+export function resolveActivateLatestCardSeries(card: ActivateLatestCardResponse): string {
+  return (card.recommended_series ?? card.series ?? '').trim();
+}
+
+/** السلسلة المرسلة إلى latest-card — تفضّل المحلية المحدّثة على كاش الباقات */
+export function pickActivateLatestCardRequestSeries(
+  packageKey: string,
+  pkg: ActivatePackageItem | null | undefined,
+  resolvedByPackage: Record<string, string>
+): string | undefined {
+  const fromLocal = resolvedByPackage[packageKey]?.trim();
+  if (fromLocal) return fromLocal;
+  const fromPkg = pkg?.recommended_series?.trim();
+  return fromPkg || undefined;
+}
+
+export interface ActivateSeriesSyncResult {
+  resolvedSeries: string;
+  previousSeries?: string;
+  requestedSeries?: string;
+  staleIgnored: boolean;
+  fallback: boolean;
+  updated: boolean;
+}
+
+/** مزامنة recommended_series محلياً بعد latest-card — لا تُعاد إرسال سلسلة قديمة */
+export function syncActivatePackageSeriesFromLatestCard(
   queryClient: QueryClient,
   queryKey: readonly unknown[],
   packageKey: string,
-  latestCard: ActivateLatestCardResponse
-): string | null {
-  if (!latestCard.series_fallback) return null;
-  const newSeries = (latestCard.recommended_series ?? latestCard.series ?? '').trim();
-  if (!newSeries) return null;
+  latestCard: ActivateLatestCardResponse,
+  currentSeries?: string | null,
+  resolvedByPackage?: Record<string, string>
+): ActivateSeriesSyncResult {
+  const resolvedSeries = resolveActivateLatestCardSeries(latestCard);
+  const previousSeries = (currentSeries ?? '').trim() || undefined;
+  const requestedSeries =
+    (latestCard.requested_series ?? '').trim() || previousSeries || undefined;
+  const staleIgnored = latestCard.stale_series_ignored === true;
+  const fallback = latestCard.series_fallback === true;
 
-  queryClient.setQueryData<ActivatePackagesResponse>(queryKey, (old) => {
-    if (!old?.packages?.length) return old;
-    return {
-      ...old,
-      packages: old.packages.map((p) =>
-        p.package_key === packageKey ? { ...p, recommended_series: newSeries } : p
-      ),
-    };
-  });
+  const shouldUpdate =
+    !!resolvedSeries &&
+    !!packageKey &&
+    (staleIgnored ||
+      fallback ||
+      !previousSeries ||
+      previousSeries !== resolvedSeries);
 
-  return newSeries;
+  if (shouldUpdate) {
+    queryClient.setQueryData<ActivatePackagesResponse>(queryKey, (old) => {
+      if (!old?.packages?.length) return old;
+      return {
+        ...old,
+        packages: old.packages.map((p) =>
+          p.package_key === packageKey ? { ...p, recommended_series: resolvedSeries } : p
+        ),
+      };
+    });
+    if (resolvedByPackage) {
+      resolvedByPackage[packageKey] = resolvedSeries;
+    }
+  }
+
+  return {
+    resolvedSeries,
+    previousSeries,
+    requestedSeries,
+    staleIgnored,
+    fallback,
+    updated: shouldUpdate,
+  };
+}
+
+export function formatActivateSeriesSyncMessage(result: ActivateSeriesSyncResult): string | null {
+  if (!result.resolvedSeries) return null;
+  const ignored = result.requestedSeries ?? result.previousSeries ?? '—';
+  if (result.staleIgnored || result.fallback) {
+    if (ignored === result.resolvedSeries) return null;
+    return `السلسلة ${ignored} غير متاحة على SAS — تم استخدام: ${result.resolvedSeries}`;
+  }
+  if (result.updated && result.previousSeries && result.previousSeries !== result.resolvedSeries) {
+    return `تم تحديث السلسلة إلى ${result.resolvedSeries}`;
+  }
+  return null;
 }

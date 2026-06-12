@@ -2351,6 +2351,33 @@ export interface ActivityLogActivityTypeOption {
   name: string;
 }
 
+/** GET /api/admin/error-log — سجل أخطاء التفعيل (4xx/5xx على /api/activate/*) */
+export interface ActivationErrorLogItem {
+  id: string;
+  requestPath: string;
+  httpMethod: string;
+  statusCode: number;
+  responseBody?: string;
+  requestBody?: string;
+  errorSummary: string;
+  subscriberUsername?: string;
+  actorUsername?: string;
+  resellerId?: number | null;
+  createdAt: string;
+}
+
+export interface ActivationErrorLogFilterParams {
+  page?: number;
+  pageSize?: number;
+  statusCode?: number;
+  requestPath?: string;
+  subscriberUsername?: string;
+  fromDate?: string;
+  toDate?: string;
+  /** أدمن: رقم ريسيلر أو all */
+  agentId?: string;
+}
+
 /** طلب إنشاء موظف لوكيل — يُرسل إلى POST /api/Agents/me/employees أو POST /api/Agents/:id/employees */
 export interface AgentEmployeeCreateRequest {
   username: string;
@@ -3141,6 +3168,10 @@ export interface ActivateLatestCardResponse {
   recommended_series?: string;
   /** true عند استخدام سلسلة بديلة بعد فشل السلسلة المطلوبة */
   series_fallback?: boolean;
+  /** true عند تجاهل series المرسلة من الفرونت لأنها قديمة/غير موجودة على SAS */
+  stale_series_ignored?: boolean;
+  /** السلسلة التي أرسلها الفرونت في الطلب */
+  requested_series?: string;
   series_candidates?: string[];
 }
 

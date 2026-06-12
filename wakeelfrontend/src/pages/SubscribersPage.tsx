@@ -51,7 +51,14 @@ import {
   shouldPollActivateStatusAfterError,
 } from '../utils/activateIdempotency';
 import { subscriberConnectionRowClass } from '../utils/subscriberOnlineStatus';
-import { packageIsActivatable, parseActivatePackageSelection, applyActivatePackageSeriesFallback } from '../utils/activatePackages';
+import {
+  packageIsActivatable,
+  parseActivatePackageSelection,
+  pickActivateLatestCardRequestSeries,
+  syncActivatePackageSeriesFromLatestCard,
+  formatActivateSeriesSyncMessage,
+  resolveActivateLatestCardSeries,
+} from '../utils/activatePackages';
 import {
   detectSasPricingHost,
   resolvePackageSalePrice,
@@ -479,6 +486,8 @@ const SubscribersPage: React.FC = () => {
   const [activateModalResellerId, setActivateModalResellerId] = useState('');
   /** idempotency_key ثابت لجلسة التفعيل — يمنع تكرار التفعيل عند Timeout */
   const activateIdempotencyKeyRef = useRef('');
+  /** سلسلة محلية محدّثة من latest-card — لا تُعاد إرسال سلسلة قديمة */
+  const activateResolvedSeriesRef = useRef<Record<string, string>>({});
   const [activateVerifying, setActivateVerifying] = useState(false);
   const [extendDayModalSubscriber, setExtendDayModalSubscriber] = useState<Subscriber | null>(null);
   const [extendDayEmployeeCode, setExtendDayEmployeeCode] = useState('');
@@ -862,11 +871,20 @@ const SubscribersPage: React.FC = () => {
     () => activatePackagesBundle?.packages ?? [],
     [activatePackagesBundle?.packages]
   );
-  const selectedActivatePackage = useMemo(
-    () =>
-      activatePackagesList.find((p) => p.package_key === activateSelectedPackageKey) ?? null,
-    [activatePackagesList, activateSelectedPackageKey]
-  );
+  const selectedActivatePackage = useMemo(() => {
+    const pkg =
+      activatePackagesList.find((p) => p.package_key === activateSelectedPackageKey) ?? null;
+    if (!pkg || !activateSelectedPackageKey.trim()) return pkg;
+    const resolved = pickActivateLatestCardRequestSeries(
+      activateSelectedPackageKey,
+      pkg,
+      activateResolvedSeriesRef.current
+    );
+    if (resolved && resolved !== (pkg.recommended_series ?? '').trim()) {
+      return { ...pkg, recommended_series: resolved };
+    }
+    return pkg;
+  }, [activatePackagesList, activateSelectedPackageKey]);
   const selectedPackageActivatable = packageIsActivatable(selectedActivatePackage);
   const pythonActivateReseller = useMemo(
     () => myResellers.find((r) => r.id === pythonActivateResellerId),
@@ -1518,11 +1536,41 @@ const SubscribersPage: React.FC = () => {
     }, 1000);
   }, [ACTIVATE_RETRY_COOLDOWN_SEC]);
 
+  const resetActivateModalState = useCallback(
+    (options?: { preserveRetryCooldown?: boolean }) => {
+      setSelectedSubscriberForRenewal(null);
+      setShowRenewalModal(false);
+      setRenewalViaSasTab(false);
+      setShowOtherDealerTopUpModal(false);
+      setActivateSelectedPackageKey('');
+      setPythonActivateStep(1);
+      setActivateModalResellerId('');
+      setActivateResellerReady(false);
+      activateResellerSelectRef.current = null;
+      activateIdempotencyKeyRef.current = '';
+      activateResolvedSeriesRef.current = {};
+      setActivateVerifying(false);
+      setActivateEmployeeCode('');
+      setShowActivateEmployeeConfirm(false);
+      setShowActivateDebtConfirm(false);
+      setActivatePaymentMethod(1);
+      setAmountReceivedInFull(true);
+      clearSubscriberSelection();
+      if (!options?.preserveRetryCooldown) {
+        clearActivateRetryCooldown();
+      }
+    },
+    [clearActivateRetryCooldown, clearSubscriberSelection]
+  );
+
+  const closeRenewalModal = useCallback(() => {
+    resetActivateModalState();
+  }, [resetActivateModalState]);
+
   const onPythonActivateFailed = useCallback(() => {
-    setShowActivateEmployeeConfirm(false);
-    setShowActivateDebtConfirm(false);
     startActivateRetryCooldown();
-  }, [startActivateRetryCooldown]);
+    resetActivateModalState({ preserveRetryCooldown: true });
+  }, [resetActivateModalState, startActivateRetryCooldown]);
 
   useEffect(() => () => clearActivateRetryCooldown(), [clearActivateRetryCooldown]);
 
@@ -1956,26 +2004,6 @@ const SubscribersPage: React.FC = () => {
     }
   });
 
-  const closeRenewalModal = useCallback(() => {
-    setSelectedSubscriberForRenewal(null);
-    setShowRenewalModal(false);
-    setRenewalViaSasTab(false);
-    setShowOtherDealerTopUpModal(false);
-    setActivateSelectedPackageKey('');
-    setPythonActivateStep(1);
-    setActivateModalResellerId('');
-    setActivateResellerReady(false);
-    activateResellerSelectRef.current = null;
-    activateIdempotencyKeyRef.current = '';
-    setActivateVerifying(false);
-    clearActivateRetryCooldown();
-    setActivateEmployeeCode('');
-    setShowActivateEmployeeConfirm(false);
-    setActivatePaymentMethod(1);
-    setAmountReceivedInFull(true);
-    clearSubscriberSelection();
-  }, [clearActivateRetryCooldown, clearSubscriberSelection]);
-
   const ensureActivateResellerSelected = useCallback((rid: string) => {
     setSelectedResellerId(rid);
     if (activateResellerSelectRef.current) {
@@ -1996,6 +2024,14 @@ const SubscribersPage: React.FC = () => {
   }, []);
 
   const openPythonActivateModal = (subscriber: Subscriber, resellerId?: string) => {
+    if (activateCooldownSec > 0) {
+      showInfo(
+        'التفعيل',
+        `فشل التفعيل السابق — انتظر ${activateCooldownSec} ثانية قبل إعادة المحاولة`
+      );
+      return;
+    }
+
     const rid = resolveSubscriberActivateResellerId(subscriber, {
       explicitResellerId: resellerId,
       operationalResellerId: selectedOperationalResellerId,
@@ -2019,7 +2055,6 @@ const SubscribersPage: React.FC = () => {
     activateIdempotencyKeyRef.current = createActivateIdempotencyKey();
     setActivateVerifying(false);
     setActivatePaymentMethod(1);
-    clearActivateRetryCooldown();
     setRenewalData((prev) => ({
       ...prev,
       subscriberId: subscriber.id,
@@ -2131,6 +2166,8 @@ const SubscribersPage: React.FC = () => {
         void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
         void queryClient.invalidateQueries({ queryKey: ['activations'] });
         void queryClient.invalidateQueries({ queryKey: ['debts'] });
+        void queryClient.invalidateQueries({ queryKey: ['activate-packages'] });
+        activateResolvedSeriesRef.current = {};
 
         const packagePrice = res.package_price ?? price ?? sub.profilePrice ?? 0;
         const amountPaidNorm = res.amount_paid ?? paidAmount ?? packagePrice;
@@ -2166,6 +2203,8 @@ const SubscribersPage: React.FC = () => {
       void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
       void queryClient.invalidateQueries({ queryKey: ['activations'] });
       void queryClient.invalidateQueries({ queryKey: ['debts'] });
+      void queryClient.invalidateQueries({ queryKey: ['activate-packages'] });
+      activateResolvedSeriesRef.current = {};
 
       const sasOk = getActivateSasResponseMessage(res);
       const baseMsg =
@@ -2211,26 +2250,33 @@ const SubscribersPage: React.FC = () => {
         rawPaid != null && Number.isFinite(Number(rawPaid))
           ? Math.max(0, Math.min(packagePrice, Number(rawPaid)))
           : packagePrice;
+      const packageKey = activateSelectedPackageKey.trim();
+      const requestSeries = pickActivateLatestCardRequestSeries(
+        packageKey,
+        pkg,
+        activateResolvedSeriesRef.current
+      );
       const latestCard = await apiService.getActivateLatestCard({
         profileId: profileId ?? pkg?.profile_id,
         profileName: profileName ?? pkg?.profile_name,
-        series: pkg?.recommended_series ?? undefined,
+        series: requestSeries,
       });
-      if (!latestCard.pin?.trim() || !latestCard.series?.trim()) {
+      const activateSeries = resolveActivateLatestCardSeries(latestCard);
+      if (!latestCard.pin?.trim() || !activateSeries) {
         throw new Error('لا يوجد كود متاح على SAS لهذه الباقة');
       }
-      if (latestCard.series_fallback && activateSelectedPackageKey) {
-        const fallbackSeries = applyActivatePackageSeriesFallback(
+      if (packageKey) {
+        const seriesSync = syncActivatePackageSeriesFromLatestCard(
           queryClient,
           ['activate-packages', pythonActivateResellerId, activateUsername],
-          activateSelectedPackageKey,
-          latestCard
+          packageKey,
+          latestCard,
+          requestSeries ?? pkg?.recommended_series,
+          activateResolvedSeriesRef.current
         );
-        if (fallbackSeries) {
-          showInfo(
-            'السلسلة',
-            `السلسلة ${pkg?.recommended_series ?? '—'} غير متاحة على SAS — تم استخدام سلسلة بديلة: ${fallbackSeries}`
-          );
+        const seriesMsg = formatActivateSeriesSyncMessage(seriesSync);
+        if (seriesMsg) {
+          showInfo('السلسلة', seriesMsg);
         }
       }
       let idempotencyKey = activateIdempotencyKeyRef.current.trim();
@@ -2242,7 +2288,7 @@ const SubscribersPage: React.FC = () => {
         idempotency_key: idempotencyKey,
         username,
         card_pin: latestCard.pin.trim(),
-        series: latestCard.series.trim(),
+        series: activateSeries,
         profile_id: profileId ?? pkg?.profile_id,
         profile_name: profileName ?? pkg?.profile_name,
         sync_codes: false,
@@ -3666,6 +3712,15 @@ const SubscribersPage: React.FC = () => {
               })}
             </div>
           </div>
+        )}
+
+        {isPythonBackend() && activateCooldownSec > 0 && !showRenewalModal && (
+          <p
+            className="text-sm font-medium text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl px-4 py-3 tabular-nums"
+            role="status"
+          >
+            فشل التفعيل — يمكنك إعادة المحاولة بعد {activateCooldownSec} ث
+          </p>
         )}
 
         <div className="flex flex-wrap items-center gap-2">

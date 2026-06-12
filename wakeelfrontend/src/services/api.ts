@@ -110,6 +110,7 @@ import {
   ExcelImportResponse,
   ActivityLogItem,
   ActivityLogActivityTypeOption,
+  ActivationErrorLogItem,
   ActivityType,
   AgentEmployeeCreateRequest,
   AgentEmployeeUpdateRequest,
@@ -575,6 +576,86 @@ function normalizePaginatedActivityLogFromApi(raw: unknown): PaginatedResponse<A
   const dataRaw = o.data ?? o.Data;
   const arr = Array.isArray(dataRaw) ? dataRaw : [];
   const data = arr.map((item) => normalizeActivityLogItemFromApi(item));
+  const currentPage = Math.max(1, Number(o.currentPage ?? o.CurrentPage ?? o.pageNumber ?? o.PageNumber ?? 1) || 1);
+  const pageSize = Math.max(1, Number(o.pageSize ?? o.PageSize ?? 20) || 20);
+  const totalItemsRaw = Number(o.totalItems ?? o.TotalItems ?? o.totalCount ?? o.TotalCount ?? 0);
+  const totalItems = Number.isFinite(totalItemsRaw) ? totalItemsRaw : data.length;
+  const totalPages = Math.max(1, Number(o.totalPages ?? o.TotalPages ?? 1) || 1);
+  const hasNextPage = Boolean(o.hasNextPage ?? o.HasNextPage ?? currentPage < totalPages);
+  const hasPreviousPage = Boolean(o.hasPreviousPage ?? o.HasPreviousPage ?? currentPage > 1);
+  return {
+    data,
+    currentPage,
+    pageSize,
+    totalItems,
+    totalPages,
+    hasNextPage,
+    hasPreviousPage,
+    totalCount: totalItems,
+    pageNumber: currentPage,
+  };
+}
+
+function normalizeActivationErrorLogItemFromApi(raw: unknown): ActivationErrorLogItem {
+  if (raw == null || typeof raw !== 'object') {
+    return {
+      id: '',
+      requestPath: '',
+      httpMethod: '',
+      statusCode: 0,
+      errorSummary: '',
+      createdAt: '',
+    };
+  }
+  const r = raw as Record<string, unknown>;
+  const str = (a: string, b: string) => String(r[a] ?? r[b] ?? '').trim();
+  const statusCode = Number(r.statusCode ?? r.StatusCode ?? 0);
+  const resellerRaw = r.resellerId ?? r.ResellerId;
+  let resellerId: number | null | undefined;
+  if (resellerRaw != null && resellerRaw !== '') {
+    const n = Number(resellerRaw);
+    resellerId = Number.isFinite(n) ? n : null;
+  }
+  const responseBodyRaw = r.responseBody ?? r.ResponseBody;
+  const requestBodyRaw = r.requestBody ?? r.RequestBody;
+  return {
+    id: str('id', 'Id') || String(r.id ?? ''),
+    requestPath: str('requestPath', 'RequestPath'),
+    httpMethod: str('httpMethod', 'HttpMethod'),
+    statusCode: Number.isFinite(statusCode) ? statusCode : 0,
+    errorSummary: str('errorSummary', 'ErrorSummary'),
+    subscriberUsername: str('subscriberUsername', 'SubscriberUsername') || undefined,
+    actorUsername: str('actorUsername', 'ActorUsername') || undefined,
+    resellerId,
+    createdAt: str('createdAt', 'CreatedAt'),
+    ...(responseBodyRaw != null && String(responseBodyRaw).trim()
+      ? { responseBody: String(responseBodyRaw) }
+      : {}),
+    ...(requestBodyRaw != null && String(requestBodyRaw).trim()
+      ? { requestBody: String(requestBodyRaw) }
+      : {}),
+  };
+}
+
+function normalizePaginatedActivationErrorLogFromApi(
+  raw: unknown
+): PaginatedResponse<ActivationErrorLogItem> {
+  const empty: PaginatedResponse<ActivationErrorLogItem> = {
+    data: [],
+    currentPage: 1,
+    pageSize: 20,
+    totalItems: 0,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPreviousPage: false,
+    totalCount: 0,
+    pageNumber: 1,
+  };
+  if (raw == null || typeof raw !== 'object') return empty;
+  const o = raw as Record<string, unknown>;
+  const dataRaw = o.data ?? o.Data;
+  const arr = Array.isArray(dataRaw) ? dataRaw : [];
+  const data = arr.map((item) => normalizeActivationErrorLogItemFromApi(item));
   const currentPage = Math.max(1, Number(o.currentPage ?? o.CurrentPage ?? o.pageNumber ?? o.PageNumber ?? 1) || 1);
   const pageSize = Math.max(1, Number(o.pageSize ?? o.PageSize ?? 20) || 20);
   const totalItemsRaw = Number(o.totalItems ?? o.TotalItems ?? o.totalCount ?? o.TotalCount ?? 0);
@@ -1814,6 +1895,41 @@ class ApiService {
     return normalizeActivityLogActivityTypesFromApi(response.data);
   }
 
+  /**
+   * سجل أخطاء التفعيل (GET /admin/error-log)
+   * - Agent: لا يرسل agentId (الباكند يستنتجه من التوكن)
+   * - Admin: agentId = رقم ريسيلر أو all
+   */
+  async getActivationErrorLog(params: {
+    page: number;
+    pageSize: number;
+    agentId?: string;
+    statusCode?: number;
+    requestPath?: string;
+    subscriberUsername?: string;
+    fromDate?: string;
+    toDate?: string;
+  }): Promise<PaginatedResponse<ActivationErrorLogItem>> {
+    const queryParams: Record<string, string | number> = {
+      page: params.page,
+      pageSize: params.pageSize,
+    };
+    if (params.agentId) queryParams.agentId = params.agentId;
+    if (params.statusCode != null && Number.isFinite(params.statusCode)) {
+      queryParams.statusCode = params.statusCode;
+    }
+    if (params.requestPath?.trim()) queryParams.requestPath = params.requestPath.trim();
+    if (params.subscriberUsername?.trim()) {
+      queryParams.subscriberUsername = params.subscriberUsername.trim();
+    }
+    if (params.fromDate) queryParams.fromDate = params.fromDate.split('T')[0];
+    if (params.toDate) queryParams.toDate = params.toDate.split('T')[0];
+    const response: AxiosResponse<unknown> = await this.api.get('/admin/error-log', {
+      params: queryParams,
+    });
+    return normalizePaginatedActivationErrorLogFromApi(response.data);
+  }
+
   // Profile/Package endpoints
   async getProfiles(params?: ProfileListParams): Promise<PaginatedResponse<Profile>> {
     if (isPythonBackend()) {
@@ -2519,6 +2635,9 @@ class ApiService {
       recommended_series:
         body.recommended_series != null ? String(body.recommended_series) : undefined,
       series_fallback: body.series_fallback === true,
+      stale_series_ignored: body.stale_series_ignored === true,
+      requested_series:
+        body.requested_series != null ? String(body.requested_series).trim() : undefined,
       series_candidates: Array.isArray(body.series_candidates)
         ? body.series_candidates.map((s) => String(s))
         : undefined,
