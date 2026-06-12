@@ -40,13 +40,16 @@ import {
   isActivateSuccessResponse,
 } from '../utils/activateApiErrors';
 import {
-  createActivateRequestId,
-  extractRequestIdFromActivateError,
+  createActivateIdempotencyKey,
+  extractIdempotencyKeyFromActivateError,
   formatActivateConflictMessage,
+  formatActivatePartialWarnings,
   getActivateHttpStatus,
+  isActivateStatusCompleted,
+  isActivateStatusFailed,
   pollActivateStatus,
   shouldPollActivateStatusAfterError,
-} from '../utils/activateRequestIdempotency';
+} from '../utils/activateIdempotency';
 import { subscriberConnectionRowClass } from '../utils/subscriberOnlineStatus';
 import { packageIsActivatable, parseActivatePackageSelection } from '../utils/activatePackages';
 import {
@@ -474,8 +477,8 @@ const SubscribersPage: React.FC = () => {
   const [showActivateDebtConfirm, setShowActivateDebtConfirm] = useState(false);
   /** رسيلر مثبّت عند فتح مودال التفعيل (X-Reseller-Id + select) */
   const [activateModalResellerId, setActivateModalResellerId] = useState('');
-  /** request_id ثابت لجلسة التفعيل — يمنع تكرار التفعيل عند Timeout */
-  const activateRequestIdRef = useRef('');
+  /** idempotency_key ثابت لجلسة التفعيل — يمنع تكرار التفعيل عند Timeout */
+  const activateIdempotencyKeyRef = useRef('');
   const [activateVerifying, setActivateVerifying] = useState(false);
   const [extendDayModalSubscriber, setExtendDayModalSubscriber] = useState<Subscriber | null>(null);
   const [extendDayEmployeeCode, setExtendDayEmployeeCode] = useState('');
@@ -1963,7 +1966,7 @@ const SubscribersPage: React.FC = () => {
     setActivateModalResellerId('');
     setActivateResellerReady(false);
     activateResellerSelectRef.current = null;
-    activateRequestIdRef.current = '';
+    activateIdempotencyKeyRef.current = '';
     setActivateVerifying(false);
     clearActivateRetryCooldown();
     setActivateEmployeeCode('');
@@ -2013,7 +2016,7 @@ const SubscribersPage: React.FC = () => {
     setActivateResellerReady(false);
     setAmountReceivedInFull(true);
     setActivateEmployeeCode('');
-    activateRequestIdRef.current = createActivateRequestId();
+    activateIdempotencyKeyRef.current = createActivateIdempotencyKey();
     setActivateVerifying(false);
     setActivatePaymentMethod(1);
     clearActivateRetryCooldown();
@@ -2113,6 +2116,8 @@ const SubscribersPage: React.FC = () => {
       closeRenewalModal();
 
       const debtSuffix = formatActivateDebtSuccessSuffix(res, formatNumber);
+      const partialWarnings = formatActivatePartialWarnings(res);
+      const replayNote = res.idempotent_replay ? ' (نتيجة محفوظة — لم يُكرَّر التفعيل على SAS)' : '';
 
       if (sub && username) {
         const receipt = buildActivateReceiptFromResponse(sub, pkg, price, res, paidAmount, {
@@ -2144,8 +2149,15 @@ const SubscribersPage: React.FC = () => {
           })
           .catch(() => {});
 
-        if (debtSuffix) {
-          showSuccess('تم التفعيل', `تم التفعيل بنجاح${debtSuffix}`);
+        if (debtSuffix || partialWarnings || replayNote) {
+          const successMsg =
+            (debtSuffix ? `تم التفعيل بنجاح${debtSuffix}` : 'تم التفعيل بنجاح') + replayNote;
+          if (partialWarnings) {
+            showInfo('تنبيه بعد التفعيل', partialWarnings);
+          }
+          if (debtSuffix || replayNote) {
+            showSuccess('تم التفعيل', successMsg);
+          }
         }
         return;
       }
@@ -2156,11 +2168,13 @@ const SubscribersPage: React.FC = () => {
       void queryClient.invalidateQueries({ queryKey: ['debts'] });
 
       const sasOk = getActivateSasResponseMessage(res);
-      showSuccess(
-        'تم التفعيل',
+      const baseMsg =
         (res.message?.trim() ||
-          (sasOk === 'rsp_success' ? 'تم التفعيل بنجاح' : 'تم تفعيل الكارد بنجاح')) + debtSuffix
-      );
+          (sasOk === 'rsp_success' ? 'تم التفعيل بنجاح' : 'تم تفعيل الكارد بنجاح')) + debtSuffix + replayNote;
+      if (partialWarnings) {
+        showInfo('تنبيه بعد التفعيل', partialWarnings);
+      }
+      showSuccess('تم التفعيل', baseMsg);
     },
     [
       activatePaymentMethod,
@@ -2203,9 +2217,9 @@ const SubscribersPage: React.FC = () => {
       if (!latestCard.pin?.trim() || !latestCard.series?.trim()) {
         throw new Error('لا يوجد كود متاح على SAS لهذه الباقة');
       }
-      const requestId = activateRequestIdRef.current.trim();
+      const idempotencyKey = activateIdempotencyKeyRef.current.trim();
       return apiService.activateSubscriber({
-        request_id: requestId || undefined,
+        idempotency_key: idempotencyKey || undefined,
         username,
         card_pin: latestCard.pin.trim(),
         series: latestCard.series.trim(),
@@ -2223,20 +2237,22 @@ const SubscribersPage: React.FC = () => {
       void handlePythonActivateSuccess(res);
     },
     onError: async (err: unknown) => {
-      const requestId =
-        activateRequestIdRef.current.trim() || extractRequestIdFromActivateError(err) || '';
+      const idempotencyKey =
+        activateIdempotencyKeyRef.current.trim() ||
+        extractIdempotencyKeyFromActivateError(err) ||
+        '';
 
-      if (requestId && shouldPollActivateStatusAfterError(err)) {
+      if (idempotencyKey && shouldPollActivateStatusAfterError(err)) {
         setActivateVerifying(true);
         try {
           showInfo(
             'التفعيل',
             'انقطع الاتصال أو التفعيل قيد المعالجة — جاري التحقق من الحالة دون إنشاء طلب جديد...'
           );
-          const status = await pollActivateStatus(requestId, (id) =>
+          const status = await pollActivateStatus(idempotencyKey, (id) =>
             apiService.getActivateStatus(id)
           );
-          if (status.status === 'succeeded') {
+          if (isActivateStatusCompleted(status.status)) {
             const res: ActivateSubscriberResponse =
               status.result ??
               ({
@@ -2246,7 +2262,7 @@ const SubscribersPage: React.FC = () => {
             await handlePythonActivateSuccess(res);
             return;
           }
-          if (status.status === 'failed') {
+          if (isActivateStatusFailed(status.status)) {
             onPythonActivateFailed();
             showError('فشل التفعيل', status.hint ?? status.message ?? 'فشل التفعيل');
             return;

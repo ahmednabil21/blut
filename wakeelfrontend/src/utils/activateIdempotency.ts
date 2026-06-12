@@ -1,7 +1,7 @@
-import type { ActivateStatusResponse } from '../types';
+import type { ActivateStatusResponse, ActivateSubscriberResponse } from '../types';
 
-/** معرّف فريد لكل محاولة تفعيل — يُنشأ عند فتح المودال ولا يُعاد توليده عند إعادة المحاولة */
-export function createActivateRequestId(): string {
+/** مفتاح idempotency فريد لجلسة التفعيل — يُنشأ عند فتح المودال ولا يُعاد توليده عند إعادة المحاولة */
+export function createActivateIdempotencyKey(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
@@ -54,48 +54,91 @@ export function shouldPollActivateStatusAfterError(error: unknown): boolean {
   );
 }
 
-export function extractRequestIdFromActivateError(error: unknown): string | null {
-  const data = getAxiosResponseData(error);
-  if (!data) return null;
+function pickIdempotencyKeyFromRecord(data: Record<string, unknown>): string | null {
   const detail = data.detail;
   if (detail != null && typeof detail === 'object' && !Array.isArray(detail)) {
-    const id = (detail as Record<string, unknown>).request_id;
+    const d = detail as Record<string, unknown>;
+    for (const key of ['idempotency_key', 'request_id'] as const) {
+      const id = d[key];
+      if (typeof id === 'string' && id.trim()) return id.trim();
+    }
+  }
+  for (const key of ['idempotency_key', 'request_id'] as const) {
+    const id = data[key];
     if (typeof id === 'string' && id.trim()) return id.trim();
   }
-  const top = data.request_id;
-  if (typeof top === 'string' && top.trim()) return top.trim();
   return null;
+}
+
+export function extractIdempotencyKeyFromActivateError(error: unknown): string | null {
+  const data = getAxiosResponseData(error);
+  if (!data) return null;
+  return pickIdempotencyKeyFromRecord(data);
 }
 
 export function formatActivateConflictMessage(error: unknown): string {
   const data = getAxiosResponseData(error);
   const detail = data?.detail;
   if (detail != null && typeof detail === 'object' && !Array.isArray(detail)) {
-    const hint = String((detail as Record<string, unknown>).hint ?? '').trim();
-    const msg = String((detail as Record<string, unknown>).message ?? '').trim();
-    if (hint || msg) return [msg, hint].filter(Boolean).join('\n');
+    const d = detail as Record<string, unknown>;
+    const hint = String(d.hint ?? '').trim();
+    const msg = String(d.message ?? '').trim();
+    const pollUrl = String(d.poll_url ?? data?.poll_url ?? '').trim();
+    const parts = [msg, hint].filter(Boolean);
+    if (pollUrl) parts.push(`استعلم عن الحالة: ${pollUrl}`);
+    if (parts.length) return parts.join('\n');
   }
-  return 'تفعيل قيد التنفيذ لهذا المشترك. انتظر قليلاً أو استعلم عن الحالة دون إنشاء طلب جديد.';
+  return 'تفعيل قيد التنفيذ — جاري التحقق من الحالة دون إنشاء طلب جديد.';
 }
 
-const TERMINAL_STATUSES = new Set(['succeeded', 'failed']);
+export type NormalizedActivateStatus = 'processing' | 'completed' | 'failed' | 'uncertain';
+
+export function normalizeActivateStatus(status: string | null | undefined): NormalizedActivateStatus {
+  const s = String(status ?? '')
+    .trim()
+    .toLowerCase();
+  if (s === 'completed' || s === 'succeeded' || s === 'success') return 'completed';
+  if (s === 'failed' || s === 'failure' || s === 'error') return 'failed';
+  if (s === 'processing' || s === 'pending' || s === 'sending' || s === 'in_progress') {
+    return 'processing';
+  }
+  return 'uncertain';
+}
+
+export function isActivateStatusCompleted(status: string | null | undefined): boolean {
+  return normalizeActivateStatus(status) === 'completed';
+}
+
+export function isActivateStatusFailed(status: string | null | undefined): boolean {
+  return normalizeActivateStatus(status) === 'failed';
+}
+
+export function formatActivatePartialWarnings(res: ActivateSubscriberResponse): string | null {
+  if (!res.post_processing_partial) return null;
+  const warnings = Array.isArray(res.warnings)
+    ? res.warnings.map((w) => String(w).trim()).filter(Boolean)
+    : [];
+  if (!warnings.length) return 'اكتمل التفعيل مع تحذيرات في المعالجة اللاحقة.';
+  return warnings.join('\n');
+}
 
 export async function pollActivateStatus(
-  requestId: string,
+  idempotencyKey: string,
   fetchStatus: (id: string) => Promise<ActivateStatusResponse>,
   options?: { intervalMs?: number; maxAttempts?: number }
 ): Promise<ActivateStatusResponse> {
   const intervalMs = options?.intervalMs ?? 3000;
   const maxAttempts = options?.maxAttempts ?? 20;
   let last: ActivateStatusResponse = {
-    request_id: requestId,
-    status: 'uncertain',
+    idempotency_key: idempotencyKey,
+    status: 'processing',
     hint: 'لم يُرد رد من الخادم',
   };
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    last = await fetchStatus(requestId);
-    if (TERMINAL_STATUSES.has(last.status)) {
+    last = await fetchStatus(idempotencyKey);
+    const normalized = normalizeActivateStatus(last.status);
+    if (normalized === 'completed' || normalized === 'failed') {
       return last;
     }
     if (attempt < maxAttempts - 1) {

@@ -3272,7 +3272,9 @@ export interface ActivateModesResponse {
 
 /** POST /api/activate — كلمة السر من إعدادات الريسيلر (activation_password) */
 export interface ActivateSubscriberRequest {
-  /** معرّف فريد للعميل — يُنشأ عند فتح مودال التفعيل (UUID) لمنع التكرار */
+  /** مفتاح idempotency (UUID) — يُنشأ عند فتح مودال التفعيل لمنع التكرار */
+  idempotency_key?: string;
+  /** @deprecated استخدم idempotency_key */
   request_id?: string;
   username: string;
   card_pin?: string;
@@ -3293,24 +3295,35 @@ export interface ActivateSubscriberRequest {
 }
 
 export type ActivateRequestStatus =
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  /** قيم قديمة — للتوافق */
   | 'pending'
   | 'sending'
   | 'succeeded'
-  | 'failed'
   | 'uncertain';
 
-/** GET /api/activate/status/{request_id} — استعلام بعد Timeout أو 503 */
+/** GET /api/activate/status/{idempotency_key} — استعلام بعد Timeout أو 409 أو 503 */
 export interface ActivateStatusResponse {
-  request_id: string;
-  status: ActivateRequestStatus;
+  idempotency_key?: string;
+  /** @deprecated */
+  request_id?: string;
+  status: ActivateRequestStatus | string;
   hint?: string;
   message?: string;
-  /** عند status=succeeded قد يتضمن نتيجة التفعيل */
+  poll_url?: string;
+  /** عند status=completed قد يتضمن نتيجة التفعيل */
   result?: ActivateSubscriberResponse;
 }
 
 export interface ActivateSubscriberResponse {
   success?: boolean;
+  /** true عند إرجاع نتيجة محفوظة لنفس idempotency_key */
+  idempotent_replay?: boolean;
+  /** true عند نجاح SAS مع فشل جزئي في post-processing */
+  post_processing_partial?: boolean;
+  warnings?: string[];
   mode?: string;
   message?: string;
   username?: string;

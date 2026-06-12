@@ -2603,13 +2603,13 @@ class ApiService {
     if (!card_pin && !hasProfile && !series) {
       throw new Error('اختر الباقة أو أرسل السلسلة مع PIN');
     }
-    const requestId = (body.request_id ?? '').trim();
+    const idempotencyKey = (body.idempotency_key ?? body.request_id ?? '').trim();
     const payload: Record<string, unknown> = {
       username,
       mock: body.mock === true ? true : false,
       sync_codes: body.sync_codes !== false,
     };
-    if (requestId) payload.request_id = requestId;
+    if (idempotencyKey) payload.idempotency_key = idempotencyKey;
     if (card_pin) payload.card_pin = card_pin;
     if (series) payload.series = series;
     if (body.profile_id != null && Number.isFinite(body.profile_id)) {
@@ -2646,14 +2646,15 @@ class ApiService {
     }
     const response = await this.api.post<ActivateSubscriberResponse>('/activate', payload, {
       timeout: 120_000,
+      headers: idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : undefined,
     });
     return response.data;
   }
 
-  /** GET /api/activate/status/{request_id} — استعلام حالة التفعيل بعد انقطاع الاتصال */
-  async getActivateStatus(requestId: string): Promise<ActivateStatusResponse> {
-    const id = requestId.trim();
-    if (!id) throw new Error('request_id مطلوب');
+  /** GET /api/activate/status/{idempotency_key} — استعلام حالة التفعيل بعد انقطاع الاتصال */
+  async getActivateStatus(idempotencyKey: string): Promise<ActivateStatusResponse> {
+    const id = idempotencyKey.trim();
+    if (!id) throw new Error('idempotency_key مطلوب');
     const response = await this.api.get<ActivateStatusResponse>(
       `/activate/status/${encodeURIComponent(id)}`,
       { timeout: 30_000 }
