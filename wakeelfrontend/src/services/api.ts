@@ -2426,8 +2426,29 @@ class ApiService {
 
   /** POST /api/cards/sync — مزامنة سلاسل الكاردات */
   async syncCardSeries(): Promise<CardSeriesSyncResult> {
-    const response = await this.api.post<CardSeriesSyncResult>('/cards/sync');
+    const response = await this.api.post<CardSeriesSyncResult>('/cards/sync', null, {
+      timeout: 120_000,
+    });
     return response.data;
+  }
+
+  /** جلب كل سلاسل الكاردات (ترقيم تلقائي) — للمزامنة الخلفية */
+  async listAllCardSeries(): Promise<string[]> {
+    const names: string[] = [];
+    const perPage = 100;
+    let page = 1;
+    let hasNext = true;
+    const maxPages = 100;
+    while (hasNext && page <= maxPages) {
+      const res = await this.getCardSeries({ page, perPage });
+      for (const row of res.data ?? []) {
+        const s = String(row.series ?? '').trim();
+        if (s) names.push(s);
+      }
+      hasNext = res.hasNextPage === true;
+      page += 1;
+    }
+    return names;
   }
 
   /** GET /api/cards — سلاسل الكاردات من قاعدة البيانات */
@@ -2458,6 +2479,7 @@ class ApiService {
         unused_only: options?.unusedOnly !== false,
         full: options?.full === true,
       },
+      timeout: 120_000,
     });
     return response.data;
   }

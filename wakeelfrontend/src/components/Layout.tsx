@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import { useDigits } from '../contexts/DigitsContext';
+import { useBackgroundCardSync } from '../hooks/useBackgroundCardSync';
 
 const Layout: React.FC = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { digitsMode, setDigitsMode } = useDigits();
+  useBackgroundCardSync();
 
   const handleToggleDigits = () => {
     setDigitsMode(digitsMode === 'ar' ? 'en' : 'ar');
