@@ -5603,8 +5603,13 @@ const SubscribersPage: React.FC = () => {
               <div className="rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50/80 dark:bg-gray-900/40 divide-y divide-gray-200 dark:divide-gray-600 text-sm">
                 <div className="flex items-center justify-between gap-3 px-4 py-2.5">
                   <span className="text-gray-500 dark:text-gray-400 shrink-0">اسم المشترك</span>
-                  <span className="font-medium text-gray-900 dark:text-white text-end">
-                    {lastReceipt.subscriberName?.trim() || '—'}
+                  <span className="font-medium text-gray-900 dark:text-white text-end flex flex-col items-end min-w-0">
+                    <span>{lastReceipt.subscriberName?.trim() || '—'}</span>
+                    {lastReceipt.subscriberUsername?.trim() ? (
+                      <span className="text-xs font-normal text-gray-500 dark:text-gray-400 tabular-nums mt-0.5 truncate max-w-full">
+                        {lastReceipt.subscriberUsername.trim()}
+                      </span>
+                    ) : null}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-3 px-4 py-2.5">
