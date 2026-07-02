@@ -2142,6 +2142,25 @@ const SubscribersPage: React.FC = () => {
         );
         return;
       }
+
+      // مزامنة تلقائية بعد كل تفعيل ناجح — تحديث أكواد السلسلة المستخدمة ثم السلاسل،
+      // حتى يُفعَّل المشترك التالي (نفس الباقة) بكود غير مستخدم دون خطأ «الكود مستخدم».
+      const usedSeries = (res.series ?? '').trim();
+      void (async () => {
+        try {
+          if (usedSeries) {
+            await apiService.syncCardCodes(usedSeries, { unusedOnly: true, full: false });
+          }
+          await apiService.syncCardSeries();
+        } catch {
+          /* صامت — لا يؤثر على نجاح التفعيل الحالي */
+        } finally {
+          void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
+          void queryClient.invalidateQueries({ queryKey: ['cardCodes'] });
+          void queryClient.invalidateQueries({ queryKey: ['activate-packages'] });
+        }
+      })();
+
       const sub = selectedSubscriberForRenewal;
       const username = (sub?.username ?? activateUsername ?? '').trim();
       const pkg = selectedActivatePackage;
