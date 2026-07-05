@@ -55,6 +55,7 @@ import {
   packageIsActivatable,
   parseActivatePackageSelection,
   pickActivateLatestCardRequestSeries,
+  collectActivatePackageSeriesCandidates,
   syncActivatePackageSeriesFromLatestCard,
   formatActivateSeriesSyncMessage,
   resolveActivateLatestCardSeries,
@@ -2275,6 +2276,14 @@ const SubscribersPage: React.FC = () => {
         pkg,
         activateResolvedSeriesRef.current
       );
+      const seriesCandidates = collectActivatePackageSeriesCandidates(requestSeries, pkg);
+      for (const seriesName of seriesCandidates) {
+        try {
+          await apiService.syncCardCodes(seriesName, { unusedOnly: true, full: false });
+        } catch {
+          /* جرّب السلسلة التالية */
+        }
+      }
       const latestCard = await apiService.getActivateLatestCard({
         profileId: profileId ?? pkg?.profile_id,
         profileName: profileName ?? pkg?.profile_name,

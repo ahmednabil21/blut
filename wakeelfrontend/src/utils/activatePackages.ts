@@ -36,7 +36,24 @@ export function parseActivatePackageSelection(value: string): {
   return {};
 }
 
-/** السلسلة الفعلية من رد latest-card — تفضّل recommended_series */
+/** سلاسl الباقة المرشّحة لمزامنة الأكواد قبل التفعيل */
+export function collectActivatePackageSeriesCandidates(
+  requestSeries?: string,
+  pkg?: ActivatePackageItem | null
+): string[] {
+  const seen = new Set<string>();
+  const add = (value?: string | null) => {
+    const trimmed = (value ?? '').trim();
+    if (trimmed) seen.add(trimmed);
+  };
+  add(requestSeries);
+  add(pkg?.recommended_series);
+  for (const item of pkg?.series ?? []) {
+    add(item.series);
+  }
+  return Array.from(seen);
+}
+
 export function resolveActivateLatestCardSeries(card: ActivateLatestCardResponse): string {
   return (card.recommended_series ?? card.series ?? '').trim();
 }

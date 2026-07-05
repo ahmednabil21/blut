@@ -2625,7 +2625,7 @@ class ApiService {
     };
   }
 
-  /** GET /api/activate/latest-card — أحدث PIN متاح من SAS (سريع) */
+  /** GET /api/activate/latest-card — أحدث PIN متاح (مزامنة أكواد السلسلة من SAS) */
   async getActivateLatestCard(params?: {
     profileId?: number | string;
     profileName?: string;
@@ -2641,7 +2641,7 @@ class ApiService {
         ...(pid != null && Number.isFinite(pid) ? { profile_id: pid } : {}),
         ...(params?.series?.trim() ? { series: params.series.trim() } : {}),
       },
-      timeout: 45_000,
+      timeout: 120_000,
     });
     const body = response.data ?? {};
     return {
