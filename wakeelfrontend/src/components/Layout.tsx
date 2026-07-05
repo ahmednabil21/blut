@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
+import { CardSeriesAutoSync } from '../components/CardSeriesAutoSync';
 import { useDigits } from '../contexts/DigitsContext';
 
 const Layout: React.FC = () => {
@@ -18,6 +19,7 @@ const Layout: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
+      <CardSeriesAutoSync />
       {/* Mobile backdrop when sidebar open */}
       {mobileMenuOpen && (
         <div
