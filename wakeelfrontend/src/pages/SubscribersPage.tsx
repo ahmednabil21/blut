@@ -2297,6 +2297,7 @@ const SubscribersPage: React.FC = () => {
         profile_id: profileId ?? pkg?.profile_id,
         profile_name: profileName ?? pkg?.profile_name,
         sync_codes: false,
+        skip_sas_pin_verify: true,
         mock: false,
         package_price: packagePrice,
         amount_paid: amountPaid,

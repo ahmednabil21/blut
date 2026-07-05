@@ -2749,7 +2749,7 @@ class ApiService {
     const payload: Record<string, unknown> = {
       username,
       mock: body.mock === true ? true : false,
-      sync_codes: body.sync_codes !== false,
+      sync_codes: body.sync_codes === true,
     };
     if (idempotencyKey) payload.idempotency_key = idempotencyKey;
     if (card_pin) payload.card_pin = card_pin;
@@ -2758,6 +2758,9 @@ class ApiService {
       payload.profile_id = body.profile_id;
     }
     if (profile_name) payload.profile_name = profile_name;
+    if (body.skip_sas_pin_verify === true) {
+      payload.skip_sas_pin_verify = true;
+    }
     if (body.activation_mode?.trim()) {
       payload.activation_mode = body.activation_mode.trim();
     }

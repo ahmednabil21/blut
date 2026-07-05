@@ -3315,6 +3315,8 @@ export interface ActivateSubscriberRequest {
   profile_id?: number;
   profile_name?: string;
   sync_codes?: boolean;
+  /** تخطّي تحقق PIN على SAS عند إرسال card_pin من latest-card */
+  skip_sas_pin_verify?: boolean;
   mock?: boolean;
   activation_mode?: string;
   /** سعر الباقة (د.ع) */
