@@ -55,7 +55,6 @@ import {
   packageIsActivatable,
   parseActivatePackageSelection,
   pickActivateLatestCardRequestSeries,
-  collectActivatePackageSeriesCandidates,
   syncActivatePackageSeriesFromLatestCard,
   formatActivateSeriesSyncMessage,
   resolveActivateLatestCardSeries,
@@ -857,15 +856,7 @@ const SubscribersPage: React.FC = () => {
       !!activateUsername &&
       activateResellerReady,
     retry: false,
-    refetchInterval:
-      showRenewalModal &&
-      isPythonBackend() &&
-      !!pythonActivateResellerId &&
-      !!activateUsername &&
-      activateResellerReady
-        ? 10_000
-        : false,
-    refetchIntervalInBackground: false,
+    staleTime: 60_000,
   });
 
   const activatePackagesList = useMemo(
@@ -2144,20 +2135,14 @@ const SubscribersPage: React.FC = () => {
         return;
       }
 
-      // مزامنة تلقائية بعد كل تفعيل ناجح — تحديث أكواد السلسلة المستخدمة ثم السلاسل،
-      // حتى يُفعَّل المشترك التالي (نفس الباقة) بكود غير مستخدم دون خطأ «الكود مستخدم».
-      const usedSeries = (res.series ?? '').trim();
+      // بعد التفعيل الناجح — تحديث سلاسl الكارد مرة واحدة في الخلفية
       void (async () => {
         try {
-          if (usedSeries) {
-            await apiService.syncCardCodes(usedSeries, { unusedOnly: true, full: false });
-          }
           await apiService.syncCardSeries();
         } catch {
-          /* صامت — لا يؤثر على نجاح التفعيل الحالي */
+          /* صامت */
         } finally {
           void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
-          void queryClient.invalidateQueries({ queryKey: ['cardCodes'] });
           void queryClient.invalidateQueries({ queryKey: ['activate-packages'] });
         }
       })();
@@ -2276,14 +2261,6 @@ const SubscribersPage: React.FC = () => {
         pkg,
         activateResolvedSeriesRef.current
       );
-      const seriesCandidates = collectActivatePackageSeriesCandidates(requestSeries, pkg);
-      for (const seriesName of seriesCandidates) {
-        try {
-          await apiService.syncCardCodes(seriesName, { unusedOnly: true, full: false });
-        } catch {
-          /* جرّب السلسلة التالية */
-        }
-      }
       const latestCard = await apiService.getActivateLatestCard({
         profileId: profileId ?? pkg?.profile_id,
         profileName: profileName ?? pkg?.profile_name,

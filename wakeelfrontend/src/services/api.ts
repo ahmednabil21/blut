@@ -2641,7 +2641,7 @@ class ApiService {
         ...(pid != null && Number.isFinite(pid) ? { profile_id: pid } : {}),
         ...(params?.series?.trim() ? { series: params.series.trim() } : {}),
       },
-      timeout: 120_000,
+      timeout: 90_000,
     });
     const body = response.data ?? {};
     return {

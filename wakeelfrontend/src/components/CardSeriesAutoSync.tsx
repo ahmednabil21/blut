@@ -5,41 +5,48 @@ import { isPythonBackend } from '../config/apiConfig';
 import { apiService } from '../services/api';
 import { ensureSasPythonSessionAfterWakeelLogin } from '../utils/sasPythonReseller';
 
-/** فترة إعادة مزامنة سلاسl الكارد أثناء بقاء التطبيق مفتوحاً (10 دقائق). */
-const RESYNC_INTERVAL_MS = 10 * 60 * 1000;
-
 /**
- * مزامنة سلاسl كروت الشحن تلقائياً بعد الدخول وكل فترة — حتى يعمل التفعيل
- * دون زيارة صفحة الكروت يدوياً.
+ * مزامنة سلاسl الكارد مرة واحدة بعد تسجيل الدخول لكل مستخدم.
+ * (بعد التفعيل الناجح تُحدَّث السلاسl من SubscribersPage — مرة واحدة)
  */
 export function CardSeriesAutoSync() {
   const { user, isAuthInitialized, isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
-  const syncingRef = useRef(false);
+  const syncedForUserRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!isPythonBackend() || !isAuthInitialized || !isAuthenticated || !user) {
+    if (!isPythonBackend() || !isAuthInitialized) {
+      return;
+    }
+    if (!isAuthenticated || !user) {
+      syncedForUserRef.current = null;
       return;
     }
 
-    const syncSeries = async () => {
-      if (syncingRef.current) return;
-      syncingRef.current = true;
+    const userKey = String(user.id);
+    if (syncedForUserRef.current === userKey) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const syncSeriesOnce = async () => {
       try {
         await ensureSasPythonSessionAfterWakeelLogin(user.role);
         await apiService.syncCardSeries();
+        if (cancelled) return;
+        syncedForUserRef.current = userKey;
         void queryClient.invalidateQueries({ queryKey: ['cardSeries'] });
         void queryClient.invalidateQueries({ queryKey: ['activate-packages'] });
       } catch {
         /* صامت — لا يعطل واجهة المستخدم */
-      } finally {
-        syncingRef.current = false;
       }
     };
 
-    void syncSeries();
-    const intervalId = window.setInterval(() => void syncSeries(), RESYNC_INTERVAL_MS);
-    return () => window.clearInterval(intervalId);
+    void syncSeriesOnce();
+    return () => {
+      cancelled = true;
+    };
   }, [user, isAuthInitialized, isAuthenticated, queryClient]);
 
   return null;
