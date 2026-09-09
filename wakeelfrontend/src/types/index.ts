@@ -3137,6 +3137,9 @@ export interface ActivatePackageItem {
   recommended_series?: string | null;
   activatable?: boolean;
   series?: ActivateSeriesItem[];
+  /** سعر البيع من الباكند (د.ع) — بعد تحديث أسماء الباقات على SAS */
+  sale_price?: number | null;
+  sale_price_iqd?: number | null;
 }
 
 export interface ActivatePackagesResponse {

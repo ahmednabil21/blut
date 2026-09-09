@@ -61,7 +61,7 @@ import {
 } from '../utils/activatePackages';
 import {
   detectSasPricingHost,
-  resolvePackageSalePrice,
+  resolveActivatePackagePrice,
 } from '../utils/activatePackagePricing';
 import {
   buildActivateReceiptFromResponse,
@@ -476,7 +476,7 @@ const SubscribersPage: React.FC = () => {
   );
   const [showAddModal, setShowAddModal] = useState(false);
   const [showRenewalModal, setShowRenewalModal] = useState(false);
-  /** مفتاح الباقة من GET /activate/packages (id:123 أو name:NOVA) */
+  /** مفتاح الباقة من GET /activate/packages (id:123 أو name:BRONZE) */
   const [activateSelectedPackageKey, setActivateSelectedPackageKey] = useState('');
   const [pythonActivateStep, setPythonActivateStep] = useState<1 | 2>(1);
   const [activateEmployeeCode, setActivateEmployeeCode] = useState('');
@@ -885,19 +885,19 @@ const SubscribersPage: React.FC = () => {
 
   const pythonPackagePrice = useMemo(
     () =>
-      resolvePackageSalePrice(
-        selectedActivatePackage?.profile_name,
+      resolveActivatePackagePrice(
+        selectedActivatePackage,
         detectSasPricingHost(pythonActivateReseller?.baseUrl)
       ),
-    [selectedActivatePackage?.profile_name, pythonActivateReseller?.baseUrl]
+    [selectedActivatePackage, pythonActivateReseller?.baseUrl]
   );
 
   const handlePythonSelectPackage = (packageKey: string) => {
     const pkg = activatePackagesList.find((p) => p.package_key === packageKey);
     if (!pkg || !packageIsActivatable(pkg)) return;
 
-    const price = resolvePackageSalePrice(
-      pkg.profile_name,
+    const price = resolveActivatePackagePrice(
+      pkg,
       detectSasPricingHost(pythonActivateReseller?.baseUrl)
     );
     if (price == null) {
