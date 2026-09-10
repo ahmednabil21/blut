@@ -2100,7 +2100,7 @@ const SubscribersPage: React.FC = () => {
       });
     },
     onSuccess: (res) => {
-      showSuccess('تمديد', res.message?.trim() || 'تم تمديد المشترك يوماً واحداً');
+      showSuccess('تمديد', res.message?.trim() || 'تم تمديد المشترك 7 أيام');
       closeExtendDayModal();
       void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
     },
@@ -5382,7 +5382,7 @@ const SubscribersPage: React.FC = () => {
                 id="extend-day-confirm-title"
                 className="text-lg font-bold text-gray-900 dark:text-white"
               >
-                تمديد يوم واحد
+                تمديد 7 أيام
               </h2>
               <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
                 تمديد المشترك{' '}
@@ -5391,7 +5391,7 @@ const SubscribersPage: React.FC = () => {
                     extendDayModalSubscriber.username ||
                     '—'}
                 </span>{' '}
-                لمدة يوم واحد (1-DAY)
+                لمدة 7 أيام (7-DAY)
               </p>
             </div>
             <div className="px-5 py-4 space-y-4">

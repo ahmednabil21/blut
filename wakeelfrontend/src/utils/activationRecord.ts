@@ -284,8 +284,16 @@ function activationPackageName(
   return (row.newProfileName ?? row.profileName ?? row.oldProfileName ?? '').trim();
 }
 
-function isOneDayPackageName(name: string): boolean {
-  return name.toUpperCase() === '1-DAY';
+function isExtendPackageName(name: string): boolean {
+  const upper = name.trim().toUpperCase();
+  return (
+    upper === '1-DAY' ||
+    upper === '7-DAY' ||
+    upper.startsWith('1-DAY') ||
+    upper.startsWith('7-DAY') ||
+    upper === '1 DAY' ||
+    upper === '7 DAY'
+  );
 }
 
 /** نص عمود «طريقة التفعيل» في صفحة التفعيلات */
@@ -297,7 +305,10 @@ export function getActivationMethodDisplayLabel(
 ): string {
   const method = (row.activationMethod ?? '').trim().toLowerCase();
   if (method === 'voucher') return 'تفعيل ساس';
-  if (isOneDayPackageName(activationPackageName(row))) return 'تمديد يوم';
+  const pkg = activationPackageName(row);
+  if (isExtendPackageName(pkg)) {
+    return pkg.toUpperCase().includes('7') ? 'تمديد 7 أيام' : 'تمديد يوم';
+  }
   const master = row.masterTypeLabel?.trim();
   if (master) return master;
   return formatActivationMethodAr(row.activationMethod);
@@ -314,7 +325,7 @@ export function getActivationMethodDisplayBadgeClass(
   if (display === 'تفعيل ساس') {
     return 'bg-sky-100 text-sky-800 border border-sky-200 dark:bg-sky-900/35 dark:text-sky-200 dark:border-sky-800';
   }
-  if (display === 'تمديد يوم') {
+  if (display === 'تمديد يوم' || display === 'تمديد 7 أيام') {
     return 'bg-amber-100 text-amber-900 border border-amber-200 dark:bg-amber-900/35 dark:text-amber-100 dark:border-amber-800';
   }
   return getMasterTypeBadgeClass(row.masterType, row.masterTypeLabel);

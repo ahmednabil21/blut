@@ -38,8 +38,8 @@ export function SubscriberExtendDayIcon({
         if (!disabled && !loading) onExtend?.();
       }}
       disabled={disabled || loading}
-      title="تمديد يوم واحد (1-DAY)"
-      aria-label="تمديد يوم واحد"
+      title="تمديد 7 أيام (7-DAY)"
+      aria-label="تمديد 7 أيام"
       className="relative inline-flex shrink-0 items-center justify-center h-8 w-8 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700 text-emerald-600 dark:text-emerald-400 transition-transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
     >
       <span
