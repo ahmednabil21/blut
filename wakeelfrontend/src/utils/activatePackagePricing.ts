@@ -26,12 +26,46 @@ function normalizeProfileKey(name: string): string {
   return name.trim().toUpperCase().replace(/\s+/g, ' ');
 }
 
-export function detectSasPricingHost(baseUrl?: string | null): SasPricingHost {
+export function detectSasPricingHost(
+  baseUrl?: string | null,
+  providerType?: string | null
+): SasPricingHost {
+  const provider = (providerType ?? '').trim().toLowerCase();
+  if (provider === 'nbtel') return 'nbtel';
   const u = (baseUrl ?? '').toLowerCase();
   if (u.includes('nbtel') || u.includes('srs878') || u.includes('reseller.nbtel')) {
     return 'nbtel';
   }
   return 'classic';
+}
+
+/** نص واجهة التمديد — Classic: 7 أيام، NBTEL: يوم واحد */
+export function extendDayUiCopy(host: SasPricingHost): {
+  days: 1 | 7;
+  packageName: string;
+  title: string;
+  shortTitle: string;
+  durationPhrase: string;
+  successFallback: string;
+} {
+  if (host === 'nbtel') {
+    return {
+      days: 1,
+      packageName: '1-DAY',
+      title: 'تمديد يوم واحد',
+      shortTitle: 'تمديد يوم',
+      durationPhrase: 'لمدة يوم واحد (1-DAY)',
+      successFallback: 'تم تمديد المشترك يوماً واحداً',
+    };
+  }
+  return {
+    days: 7,
+    packageName: '7-DAY',
+    title: 'تمديد 7 أيام',
+    shortTitle: 'تمديد 7 أيام',
+    durationPhrase: 'لمدة 7 أيام (7-DAY)',
+    successFallback: 'تم تمديد المشترك 7 أيام',
+  };
 }
 
 function lookupPrice(table: Record<string, number>, profileName: string): number | null {

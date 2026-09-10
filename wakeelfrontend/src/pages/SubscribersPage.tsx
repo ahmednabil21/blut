@@ -61,6 +61,7 @@ import {
 } from '../utils/activatePackages';
 import {
   detectSasPricingHost,
+  extendDayUiCopy,
   resolveActivatePackagePrice,
 } from '../utils/activatePackagePricing';
 import {
@@ -881,6 +882,16 @@ const SubscribersPage: React.FC = () => {
   const pythonActivateReseller = useMemo(
     () => myResellers.find((r) => r.id === pythonActivateResellerId),
     [myResellers, pythonActivateResellerId]
+  );
+
+  const extendDayPricingHost = useMemo(() => {
+    const rid = (selectedOperationalResellerId || getSelectedResellerId() || '').trim();
+    const row = rid ? myResellers.find((r) => String(r.id) === rid) : null;
+    return detectSasPricingHost(row?.baseUrl);
+  }, [myResellers, selectedOperationalResellerId]);
+  const extendDayCopy = useMemo(
+    () => extendDayUiCopy(extendDayPricingHost),
+    [extendDayPricingHost]
   );
 
   const pythonPackagePrice = useMemo(
@@ -2100,7 +2111,7 @@ const SubscribersPage: React.FC = () => {
       });
     },
     onSuccess: (res) => {
-      showSuccess('تمديد', res.message?.trim() || 'تم تمديد المشترك 7 أيام');
+      showSuccess('تمديد', res.message?.trim() || extendDayCopy.successFallback);
       closeExtendDayModal();
       void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
     },
@@ -4366,6 +4377,7 @@ const SubscribersPage: React.FC = () => {
                           debtDays={subscriber.debtDays}
                           loading={extendDayRowId === subscriber.id && extendDayMutation.isPending}
                           disabled={extendDayMutation.isPending}
+                          pricingHost={extendDayPricingHost}
                           onExtend={() => openExtendDayModal(subscriber)}
                         />
                       )}
@@ -5382,7 +5394,7 @@ const SubscribersPage: React.FC = () => {
                 id="extend-day-confirm-title"
                 className="text-lg font-bold text-gray-900 dark:text-white"
               >
-                تمديد 7 أيام
+                {extendDayCopy.title}
               </h2>
               <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
                 تمديد المشترك{' '}
@@ -5391,7 +5403,7 @@ const SubscribersPage: React.FC = () => {
                     extendDayModalSubscriber.username ||
                     '—'}
                 </span>{' '}
-                لمدة 7 أيام (7-DAY)
+                {extendDayCopy.durationPhrase}
               </p>
             </div>
             <div className="px-5 py-4 space-y-4">
