@@ -2280,7 +2280,18 @@ class ApiService {
       lastOnlineRaw != null && String(lastOnlineRaw).trim() !== ''
         ? String(lastOnlineRaw).trim()
         : undefined;
-    const profileDetails = row.profile_details as { name?: string } | null | undefined;
+    const profileDetails = row.profile_details as
+      | { id?: number | string; name?: string }
+      | null
+      | undefined;
+    const profileIdRaw = row.profile_id ?? row.profileId ?? profileDetails?.id;
+    const profileId =
+      profileIdRaw != null && String(profileIdRaw).trim() !== ''
+        ? String(profileIdRaw).trim()
+        : undefined;
+    const profileName = String(
+      profileDetails?.name ?? row.profile_name ?? row.profileName ?? ''
+    ).trim();
     const sasId = String(row.id ?? row.user_id ?? '').trim();
     const daysRemaining = daysUntilExpiration(expiration || undefined);
     const statusLabel = String(
@@ -2337,7 +2348,8 @@ class ApiService {
       daysUntilExpiry: daysRemaining,
       daysUntilExpiryText: statusLabel || undefined,
       createdAt: activationDate || new Date().toISOString(),
-      profileName: profileDetails?.name ?? '',
+      profileId,
+      profileName,
       profilePrice: 0,
       agentCompanyName: '',
       agentResellerId: (fetchReseller?.id ?? '').trim() || undefined,

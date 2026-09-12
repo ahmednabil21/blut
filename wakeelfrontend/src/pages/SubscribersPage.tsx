@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { apiService, ApiService } from '../services/api';
 import {
@@ -739,7 +739,13 @@ const SubscribersPage: React.FC = () => {
     isFetching: subscribersFetching,
   } = useQuery<PaginatedResponse<Subscriber>>({
     queryKey: ['subscribers', 'offline', online, currentPage, pageSize, debouncedSearchTerm, statusFilter, connectionStatusFilter, sortColumn, sortDescending, appliedMaxDaysUntilExpiry, appliedFatFilter, appliedZoneFilter, appliedNoteTypeFilter, appliedExtensionActivationFilter, appliedExpirationFromDate, appliedExpirationToDate, selectedOperationalResellerId],
-    placeholderData: keepPreviousData,
+    // لا تُبقَ بيانات الريسيلر السابق عند التبديل — وإلا يظهر مشتركون من SAS آخر
+    placeholderData: (previousData, previousQuery) => {
+      if (!previousData || !previousQuery) return undefined;
+      const prevReseller = previousQuery.queryKey[previousQuery.queryKey.length - 1];
+      if (prevReseller !== selectedOperationalResellerId) return undefined;
+      return previousData;
+    },
     refetchInterval: (query) => {
       if (!isPythonBackend() || !online) return false;
       if (connectionStatusFilter !== 'all') return false;
@@ -809,26 +815,51 @@ const SubscribersPage: React.FC = () => {
     enabled: !sasSearchOnlyMode || isValidSearchOnlyQuery(debouncedSearchTerm),
   });
 
-  const subscribers = React.useMemo(() => {
+  const subscribersRaw = React.useMemo(() => {
     const raw = subscribersResponse?.data ?? [];
     if (!isPythonBackend()) return raw;
+
+    const expectedReseller = (selectedOperationalResellerId || '').trim();
+    const responseReseller =
+      subscribersResponse?.resellerId != null
+        ? String(subscribersResponse.resellerId).trim()
+        : '';
+    // تجاهل رد/كاش لريسيلر غير المختار (تجنّب خلط قائمتين)
+    if (
+      expectedReseller &&
+      responseReseller &&
+      responseReseller !== expectedReseller
+    ) {
+      return [];
+    }
+
     if (isAllOperationalResellersMode(selectedOperationalResellerId)) {
       return clearResellerRegionFromSubscribers(raw);
     }
     const fetchReseller = resolveSasFetchReseller(myResellers, selectedOperationalResellerId);
     return attachResellerRegionToSubscribers(raw, fetchReseller);
-  }, [subscribersResponse?.data, myResellers, selectedOperationalResellerId]);
-  const selectedSubscriber =
-    selectedSubscriberForRenewal ?? subscribers?.find((s) => s.id === renewalData.subscriberId) ?? null;
-  const renewalResellerIdForQuery = (selectedSubscriber?.agentResellerId ?? '').trim() || undefined;
-  const activateUsername = (selectedSubscriber?.username ?? '').trim();
+  }, [
+    subscribersResponse?.data,
+    subscribersResponse?.resellerId,
+    myResellers,
+    selectedOperationalResellerId,
+  ]);
+
+  // يُحدَّث لاحقاً بعد إثراء أسماء الباقات — مرجع مؤقت لتجنّب TDZ
+  const selectedSubscriberEarly =
+    selectedSubscriberForRenewal ??
+    subscribersRaw.find((s) => s.id === renewalData.subscriberId) ??
+    null;
+  const renewalResellerIdForQuery =
+    (selectedSubscriberEarly?.agentResellerId ?? '').trim() || undefined;
+  const activateUsername = (selectedSubscriberEarly?.username ?? '').trim();
   const activateSubscriberName = useMemo(() => {
-    const sub = selectedSubscriber;
+    const sub = selectedSubscriberEarly;
     if (!sub) return '';
     const full = (sub.fullName ?? '').trim();
     if (full) return full;
     return [(sub.firstName ?? '').trim(), (sub.lastName ?? '').trim()].filter(Boolean).join(' ');
-  }, [selectedSubscriber]);
+  }, [selectedSubscriberEarly]);
   const pythonActivateResellerId = activateModalResellerId.trim();
 
   const { data: activatePaymentMethods = DEFAULT_ACTIVATE_PAYMENT_METHODS } = useQuery({
@@ -949,6 +980,32 @@ const SubscribersPage: React.FC = () => {
     () => (profilesResponse?.data ?? []) as Profile[],
     [profilesResponse]
   );
+  const liveProfileNameById = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of profiles) {
+      const id = String(p.id ?? '').trim();
+      const name = (p.name ?? '').trim();
+      if (id && name) map.set(id, name);
+    }
+    return map;
+  }, [profiles]);
+
+  const subscribers = React.useMemo(() => {
+    if (!isPythonBackend() || liveProfileNameById.size === 0) return subscribersRaw;
+    return subscribersRaw.map((s) => {
+      const pid = (s.profileId ?? '').trim();
+      if (!pid) return s;
+      const liveName = liveProfileNameById.get(pid);
+      if (!liveName || liveName === (s.profileName ?? '').trim()) return s;
+      return { ...s, profileName: liveName };
+    });
+  }, [subscribersRaw, liveProfileNameById]);
+
+  const selectedSubscriber =
+    selectedSubscriberForRenewal ??
+    subscribers.find((s) => s.id === renewalData.subscriberId) ??
+    null;
+
   const activeProfiles = React.useMemo(
     () => profiles.filter((p) => p.isActive),
     [profiles]
@@ -1128,8 +1185,12 @@ const SubscribersPage: React.FC = () => {
     if (!resellerId || selectedOperationalResellerId === resellerId) return;
     setSelectedOperationalResellerId(resellerId);
     setSelectedResellerId(resellerId);
+    setSelectedIds([]);
+    setCurrentPage(1);
     if (isPythonBackend()) {
       void clearCachedSubscribers();
+      // احذف كاش القائمة فوراً حتى لا تظهر مشتركي الريسيلر السابق
+      queryClient.removeQueries({ queryKey: ['subscribers'] });
       try {
         await apiService.selectApiReseller(resellerId);
       } catch {
@@ -1137,7 +1198,7 @@ const SubscribersPage: React.FC = () => {
       }
     }
     void queryClient.invalidateQueries({ queryKey: ['subscribers'] });
-    setCurrentPage(1);
+    void queryClient.invalidateQueries({ queryKey: ['profiles'] });
   };
 
   const [showResellerPickerModal, setShowResellerPickerModal] = useState(false);
