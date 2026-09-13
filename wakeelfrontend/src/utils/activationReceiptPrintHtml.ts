@@ -201,17 +201,24 @@ export async function embedActivationReceiptStaticImages(
   };
 }
 
-/** كتابة مستند الطباعة في iframe مخفي (نفس سياق الصفحة) ثم الطباعة. */
+/**
+ * طباعة مباشرة عبر iframe خارج الشاشة — بدون فتح تبويب/نافذة تعرض ملف الفاتورة.
+ * يُرسل الأمر إلى مربع حوار الطباعة (أو للطابعة الافتراضية عند تفعيل الطباعة الصامتة في المتصفح).
+ * مناسب لطابعات POS الحرارية مثل CP-Q5B (80mm).
+ */
 export async function openActivationReceiptPrintWindow(html: string): Promise<void> {
   const iframe = document.createElement('iframe');
   iframe.setAttribute('title', 'activation-receipt-print');
+  iframe.setAttribute('aria-hidden', 'true');
   iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
+  iframe.style.left = '-10000px';
+  iframe.style.top = '0';
+  iframe.style.width = '80mm';
+  iframe.style.height = '120mm';
   iframe.style.border = '0';
-  iframe.style.visibility = 'hidden';
+  iframe.style.opacity = '0';
+  iframe.style.pointerEvents = 'none';
+  iframe.style.zIndex = '-1';
   document.body.appendChild(iframe);
 
   const printDoc = iframe.contentDocument;
@@ -228,16 +235,22 @@ export async function openActivationReceiptPrintWindow(html: string): Promise<vo
   await waitForDocumentImages(printDoc);
   await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
-  printWin.focus();
-  printWin.print();
-
   const cleanup = () => {
     if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
   };
+
+  try {
+    printWin.focus();
+    printWin.print();
+  } catch {
+    cleanup();
+    throw new Error('PRINT_FAILED');
+  }
+
   if (typeof printWin.onafterprint !== 'undefined') {
     printWin.onafterprint = cleanup;
   } else {
-    setTimeout(cleanup, 2000);
+    setTimeout(cleanup, 1500);
   }
 }
 

@@ -505,6 +505,7 @@ const SubscribersPage: React.FC = () => {
   /** مودال التفعيل — واصل: المبلغ كاملاً (افتراضي) */
   const [amountReceivedInFull, setAmountReceivedInFull] = useState(true);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptPrinting, setReceiptPrinting] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [selectedSubscriberForEdit, setSelectedSubscriberForEdit] = useState<Subscriber | null>(null);
@@ -3178,10 +3179,25 @@ const SubscribersPage: React.FC = () => {
     }
   };
 
+  /** طباعة مباشرة للطابعة الحرارية بدون فتح/عرض ملف الفاتورة في تبويب. */
   const handlePostActivationSaveAndPrint = async () => {
-    if (!lastReceipt) return;
+    if (!lastReceipt || receiptPrinting) return;
+    setReceiptPrinting(true);
+    try {
+      await handlePrintReceipt(lastReceipt);
+      setShowReceiptModal(false);
+    } catch {
+      /* handlePrintReceipt يعرض التنبيه */
+    } finally {
+      setReceiptPrinting(false);
+    }
+  };
+
+  /** التفعيل محفوظ مسبقاً — إغلاق المودال دون إرسال أمر طباعة. */
+  const handlePostActivationSaveWithoutPrint = () => {
+    if (receiptPrinting) return;
     setShowReceiptModal(false);
-    await handlePrintReceipt(lastReceipt);
+    showSuccess('تم الحفظ', 'تم حفظ التفعيل بدون طباعة.');
   };
 
   const getWhatsAppReminderErrorMessage = (err: any): string => {
@@ -5744,11 +5760,21 @@ const SubscribersPage: React.FC = () => {
             <div className="flex flex-col gap-2 p-4 pt-0 border-t border-gray-200 dark:border-gray-700">
               <button
                 type="button"
+                disabled={receiptPrinting}
                 onClick={() => void handlePostActivationSaveAndPrint()}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-3 text-sm font-semibold text-white hover:bg-primary-700 transition-colors"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 py-3 text-sm font-semibold text-white hover:bg-primary-700 disabled:opacity-60 transition-colors"
               >
                 <Printer className="h-4 w-4" />
-                <span>طباعة</span>
+                <span>{receiptPrinting ? 'جاري إرسال الطباعة…' : 'طباعة مباشرة'}</span>
+              </button>
+              <button
+                type="button"
+                disabled={receiptPrinting}
+                onClick={handlePostActivationSaveWithoutPrint}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-600 px-4 py-3 text-sm font-medium text-gray-800 dark:text-gray-100 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-60 transition-colors"
+              >
+                <Save className="h-4 w-4" />
+                <span>حفظ بدون طباعة</span>
               </button>
               <button
                 type="button"
@@ -5760,13 +5786,6 @@ const SubscribersPage: React.FC = () => {
                 <MessageCircle className="h-4 w-4" />
                 <span>إرسال واتساب</span>
                 <span className="text-xs opacity-80">(قيد التطوير)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowReceiptModal(false)}
-                className="w-full rounded-lg px-4 py-2.5 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              >
-                إغلاق
               </button>
             </div>
           </div>
