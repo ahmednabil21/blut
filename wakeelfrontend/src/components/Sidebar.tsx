@@ -159,17 +159,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse, onClos
       hiddenWhenFeature: 'hide_subscription_pages',
     },
     {
-      name: 'المواد والمبيعات',
-      path: '/admin/materials',
-      icon: Store,
-      roles: [UserRole.Admin, UserRole.Agent, UserRole.SubAgent, UserRole.Employee],
-      children: [
-        { name: 'إدارة المواد', path: '/admin/materials' },
-        { name: 'شاشة البيع', path: '/admin/materials/disbursed' },
-        { name: 'سجل المبيعات', path: '/admin/materials/sales-history' },
-      ],
-    },
-    {
       name: isPythonBackend() ? 'الموظفون' : 'إدارة الموظفين',
       path: '/admin/employees',
       icon: UserPlus,
@@ -256,24 +245,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse, onClos
   const normalizedMenuItems = menuItems.flatMap((item) => {
     // الموظف: بدون صلاحية كشوفات/مصاريف — رابط مباشر «المهام» فقط عند وجود صلاحية مهام
     if (user?.role === UserRole.Employee && item.path === '/admin/employees') {
-      const hasTasks = !!(
-        user?.canReceiveTaskRequests ||
-        user?.canManageEmployeeTasks ||
-        user?.canManageMaterialsAndSales
-      );
+      const hasTasks = !!(user?.canReceiveTaskRequests || user?.canManageEmployeeTasks);
       const hasExpense = user?.canAccessExpensesAndSalarySheet === true;
       const showSasEmployees =
         isPythonBackend() && !!user?.sasCanViewEmployees;
       if (!hasTasks && !hasExpense && !showSasEmployees) {
         return [];
-      }
-      /** صلاحية المبيعات/المواد: إبقاء مجموعة «إدارة الموظفين» مع العرض والمهام (بدون طيّها إلى رابط مهام فقط). */
-      if (user?.canManageMaterialsAndSales && item.children?.length) {
-        const children = item.children.filter((c) => {
-          if (c.path === '/admin/expenses/salary-sheet' && !hasExpense) return false;
-          return true;
-        });
-        return [{ ...item, children }];
       }
       if (hasTasks && !hasExpense) {
         return [
@@ -339,8 +316,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse, onClos
       if (
         item.path === '/admin/employees/tasks' &&
         !user.canReceiveTaskRequests &&
-        !user.canManageEmployeeTasks &&
-        !user.canManageMaterialsAndSales
+        !user.canManageEmployeeTasks
       ) {
         return false;
       }
@@ -350,13 +326,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse, onClos
       if (item.path === '/admin/activity-log' && user.sasCanAccessSystemLog === false) return false;
       if (item.path === '/admin/cards' && user.sasCanAccessCards === false) return false;
       if (item.path === '/admin/employees' && !user.sasCanViewEmployees) return false;
-    }
-    if (
-      user?.role === UserRole.Employee &&
-      item.path === '/admin/materials' &&
-      !user?.canManageMaterialsAndSales
-    ) {
-      return false;
     }
     if (
       isRestrictedEmployee &&
@@ -390,7 +359,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse, onClos
   const showOnlyEmployeeTasksInSidebar =
     user?.role === UserRole.Employee &&
     (!!user?.canReceiveTaskRequests || !!user?.canManageEmployeeTasks) &&
-    !user?.canManageMaterialsAndSales &&
     !hasAnySubscriberPermission &&
     user?.canAccessExpensesAndSalarySheet !== true;
   const finalMenuItems = showOnlyEmployeeTasksInSidebar
@@ -520,19 +488,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse, onClos
                   </button>
                   {isExpanded && item.children!
                     .filter((child) => {
-                      if (
-                        child.path === '/admin/employees' &&
-                        user?.role === UserRole.Employee &&
-                        !user?.canManageMaterialsAndSales
-                      ) {
+                      if (child.path === '/admin/employees' && user?.role === UserRole.Employee) {
                         return false;
                       }
                       if (
                         child.employeeRequiresTaskPermission &&
                         user?.role === UserRole.Employee &&
                         !user?.canReceiveTaskRequests &&
-                        !user?.canManageEmployeeTasks &&
-                        !user?.canManageMaterialsAndSales
+                        !user?.canManageEmployeeTasks
                       ) {
                         return false;
                       }

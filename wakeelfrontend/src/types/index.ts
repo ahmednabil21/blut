@@ -1057,13 +1057,14 @@ export const EMPLOYEE_PERMISSION_LABELS: Record<keyof EmployeePermissions, strin
   canViewAllSubscribers: 'عرض كل المشتركين (بدون اشتراط البحث بالاسم)',
   canReceiveTaskRequests: 'استلام طلبات المهام',
   canManageEmployeeTasks: 'إدارة مهام الموظفين',
-  /** تُعرض في نماذج الصلاحيات؛ تشمل المواد/الصرف ووصول الموظف لعرض الموظفين ومهامهم */
+  /** لم تعد تُعرض في النماذج — وحدة المواد والمبيعات مُعطّلة */
   canManageMaterialsAndSales: 'إدارة المبيعات والمواد',
 };
 
 /**
  * ترتيب عرض صلاحيات الموظف في نماذج الإضافة/التعديل (وكيل، أدمن، إلخ).
- * يجب أن يشمل كل مفتاح من `EmployeePermissions` — منها **canAccessDealers** (CanAccessDealers في الـ API).
+ * يجب أن يشمل كل مفتاح من `EmployeePermissions` المعروض في الواجهة — منها **canAccessDealers** (CanAccessDealers في الـ API).
+ * ملاحظة: canManageMaterialsAndSales أُزيلت من الواجهة مع تعطيل وحدة المواد والمبيعات.
  */
 export const EMPLOYEE_PERMISSION_FORM_KEYS: readonly (keyof EmployeePermissions)[] = [
   'canActivateSubscriber',
@@ -1078,7 +1079,6 @@ export const EMPLOYEE_PERMISSION_FORM_KEYS: readonly (keyof EmployeePermissions)
   'canViewAllSubscribers',
   'canReceiveTaskRequests',
   'canManageEmployeeTasks',
-  'canManageMaterialsAndSales',
 ] as const;
 
 /** قيمة صلاحية للعرض في checkbox — يعتمد القيمة المحفوظة أو الافتراضي من `DEFAULT_EMPLOYEE_PERMISSIONS`. */

@@ -38,8 +38,6 @@ const ResellersPage = lazy(() => import('./pages/ResellersPage'));
 const EmployeesPage = lazy(() => import('./pages/EmployeesPage'));
 const SasEmployeesPage = lazy(() => import('./pages/SasEmployeesPage'));
 const EmployeeTasksPage = lazy(() => import('./pages/EmployeeTasksPage'));
-const MaterialsPage = lazy(() => import('./pages/MaterialsPage'));
-const MaterialsDisbursementPage = lazy(() => import('./pages/MaterialsDisbursementPage'));
 const SystemMessagePage = lazy(() => import('./pages/SystemMessagePage'));
 const OfficeExpensesPage = lazy(() => import('./pages/OfficeExpensesPage'));
 const SalarySheetPage = lazy(() => import('./pages/SalarySheetPage'));
@@ -91,11 +89,9 @@ function RestrictedEmployeeRoute({ routePath, children }: { routePath: string; c
     user?.canAccessSubscriberDashboard === false;
   const hiddenPaths = ['packages', 'cards', 'employees', 'reports', 'settings'];
   const isHidden = hiddenPaths.includes(routePath) || routePath.startsWith('expenses');
-  const allowEmployeesWithSalesPermission =
-    routePath === 'employees' && !!user?.canManageMaterialsAndSales;
   const allowPackagesWithSubscriberActivation =
     (routePath === 'packages' || routePath === 'cards') && !!user?.canActivateSubscriber;
-  if (isRestricted && isHidden && !allowEmployeesWithSalesPermission && !allowPackagesWithSubscriberActivation) {
+  if (isRestricted && isHidden && !allowPackagesWithSubscriberActivation) {
     return <Navigate to="/admin/subscribers" replace />;
   }
   return <>{children}</>;
@@ -125,18 +121,8 @@ function EmployeeTasksAccessRoute({ children }: { children: React.ReactNode }) {
   if (
     user?.role === UserRole.Employee &&
     !user?.canReceiveTaskRequests &&
-    !user?.canManageEmployeeTasks &&
-    !user?.canManageMaterialsAndSales
+    !user?.canManageEmployeeTasks
   ) {
-    return <Navigate to="/admin/subscribers" replace />;
-  }
-  return <>{children}</>;
-}
-
-/** صفحات المواد والمبيعات: للموظف فقط عند تفعيل إدارة المبيعات والمواد */
-function MaterialsAccessRoute({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
-  if (user?.role === UserRole.Employee && !user?.canManageMaterialsAndSales) {
     return <Navigate to="/admin/subscribers" replace />;
   }
   return <>{children}</>;
@@ -256,28 +242,10 @@ function App() {
                       </ProtectedRoute>
                     )
                   } />
-                  {/* Materials - Admin, Agent, SubAgent، أو موظف بصلاحية المواد */}
-                  <Route path="materials" element={
-                    <ProtectedRoute allowedRoles={[UserRole.Admin, UserRole.Agent, UserRole.SubAgent, UserRole.Employee]}>
-                      <MaterialsAccessRoute>
-                        <MaterialsPage />
-                      </MaterialsAccessRoute>
-                    </ProtectedRoute>
-                  } />
-                  <Route path="materials/disbursed" element={
-                    <ProtectedRoute allowedRoles={[UserRole.Admin, UserRole.Agent, UserRole.SubAgent, UserRole.Employee]}>
-                      <MaterialsAccessRoute>
-                        <MaterialsDisbursementPage />
-                      </MaterialsAccessRoute>
-                    </ProtectedRoute>
-                  } />
-                  <Route path="materials/sales-history" element={
-                    <ProtectedRoute allowedRoles={[UserRole.Admin, UserRole.Agent, UserRole.SubAgent, UserRole.Employee]}>
-                      <MaterialsAccessRoute>
-                        <MaterialsDisbursementPage />
-                      </MaterialsAccessRoute>
-                    </ProtectedRoute>
-                  } />
+                  {/* المواد والمبيعات — أُزيلت من النظام؛ إعادة توجيه للمسارات القديمة */}
+                  <Route path="materials" element={<Navigate to="/admin/subscribers" replace />} />
+                  <Route path="materials/disbursed" element={<Navigate to="/admin/subscribers" replace />} />
+                  <Route path="materials/sales-history" element={<Navigate to="/admin/subscribers" replace />} />
                   <Route path="agents" element={
                     <ProtectedRoute allowedRoles={[UserRole.Admin]}>
                       <AgentsPage />

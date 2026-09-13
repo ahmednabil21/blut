@@ -8,8 +8,6 @@ import {
   PaginatedResponse,
   AgentReseller,
   ProfilePackageType,
-  Material,
-  UserRole,
 } from '../types';
 import { showSuccess, showError } from '../utils/notifications';
 import { useConfirmation } from '../contexts/ConfirmationContext';
@@ -89,22 +87,6 @@ const PackagesPage: React.FC = () => {
   });
 
   const packages = profilesResponse?.data ?? [];
-
-  const showMaterialsPickerAdd =
-    showAddModal && formData.packageType === ProfilePackageType.SpecialOffer;
-  const showMaterialsPickerEdit =
-    showEditModal && editFormData.packageType === ProfilePackageType.SpecialOffer;
-
-  const { data: materialsResponse, isPending: materialsLoading, isError: materialsError } = useQuery<PaginatedResponse<Material>>({
-    queryKey: ['materials', 'packages-form'],
-    queryFn: () => apiService.getMaterials(undefined, { page: 1, pageSize: 500 }),
-    enabled:
-      (showMaterialsPickerAdd || showMaterialsPickerEdit) &&
-      (user?.role !== UserRole.Employee ||
-        !!user?.canManageMaterialsAndSales ||
-        !!user?.canActivateSubscriber),
-  });
-  const materialsList = materialsResponse?.data ?? [];
 
   const packageTypeBadge = (t?: ProfilePackageType) => {
     if (t === ProfilePackageType.Extension) return 'تمديد';
@@ -584,41 +566,6 @@ const PackagesPage: React.FC = () => {
                 />
               </div>
 
-              {formData.packageType === ProfilePackageType.SpecialOffer && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    إضافة المواد (اختياري)
-                  </label>
-                  {materialsLoading ? (
-                    <p className="text-sm text-gray-500 dark:text-gray-400">جاري تحميل المواد...</p>
-                  ) : materialsError ? (
-                    <p className="text-sm text-red-600 dark:text-red-400">تعذر تحميل قائمة المواد. تحقق من الاتصال وحاول مرة أخرى.</p>
-                  ) : materialsList.length === 0 ? (
-                    <p className="text-sm text-gray-500 dark:text-gray-400">لا توجد مواد في المخزن بعد.</p>
-                  ) : (
-                    <div className="max-h-44 overflow-y-auto border border-gray-200 dark:border-gray-600 rounded-md p-3 space-y-2 bg-gray-50 dark:bg-gray-900/40">
-                      {materialsList.map((m) => (
-                        <label key={m.id} className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            className="rounded border-gray-300 dark:border-gray-600"
-                            checked={(formData.includedMaterialIds ?? []).includes(m.id)}
-                            onChange={(e) => {
-                              const cur = new Set(formData.includedMaterialIds ?? []);
-                              if (e.target.checked) cur.add(m.id);
-                              else cur.delete(m.id);
-                              setFormData((prev) => ({ ...prev, includedMaterialIds: Array.from(cur) }));
-                            }}
-                          />
-                          <span className="flex-1">{m.name}</span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">{m.quantity} متوفر</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                  فترة التجديد (بالأيام) *
@@ -765,41 +712,6 @@ const PackagesPage: React.FC = () => {
                   placeholder="السعر على المشترك"
                 />
               </div>
-
-              {editFormData.packageType === ProfilePackageType.SpecialOffer && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    إضافة المواد (اختياري)
-                  </label>
-                  {materialsLoading ? (
-                    <p className="text-sm text-gray-500 dark:text-gray-400">جاري تحميل المواد...</p>
-                  ) : materialsError ? (
-                    <p className="text-sm text-red-600 dark:text-red-400">تعذر تحميل قائمة المواد. تحقق من الاتصال وحاول مرة أخرى.</p>
-                  ) : materialsList.length === 0 ? (
-                    <p className="text-sm text-gray-500 dark:text-gray-400">لا توجد مواد في المخزن بعد.</p>
-                  ) : (
-                    <div className="max-h-44 overflow-y-auto border border-gray-200 dark:border-gray-600 rounded-md p-3 space-y-2 bg-gray-50 dark:bg-gray-900/40">
-                      {materialsList.map((m) => (
-                        <label key={m.id} className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            className="rounded border-gray-300 dark:border-gray-600"
-                            checked={(editFormData.includedMaterialIds ?? []).includes(m.id)}
-                            onChange={(e) => {
-                              const cur = new Set(editFormData.includedMaterialIds ?? []);
-                              if (e.target.checked) cur.add(m.id);
-                              else cur.delete(m.id);
-                              setEditFormData((prev) => ({ ...prev, includedMaterialIds: Array.from(cur) }));
-                            }}
-                          />
-                          <span className="flex-1">{m.name}</span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">{m.quantity} متوفر</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

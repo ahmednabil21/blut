@@ -495,7 +495,6 @@ function SettingsPage() {
     | 'details'
     | 'customMessage'
     | 'invoicePrintActivation'
-    | 'invoicePrintSales'
     | 'resellers'
     | 'sas'
     | 'whatsapp'
@@ -512,7 +511,7 @@ function SettingsPage() {
   const { data: invoiceAgentsListResponse } = useQuery({
     queryKey: ['agents-invoice-print-templates'],
     queryFn: () => apiService.getAllAgents({ page: 1, pageSize: 500 }),
-    enabled: isAdmin && (activeSection === 'invoicePrintActivation' || activeSection === 'invoicePrintSales'),
+    enabled: isAdmin && activeSection === 'invoicePrintActivation',
     staleTime: 120_000,
   });
   const invoiceAgentsForPrint = useMemo(
@@ -522,7 +521,7 @@ function SettingsPage() {
 
   useEffect(() => {
     if (!isAdmin) return;
-    if (activeSection !== 'invoicePrintActivation' && activeSection !== 'invoicePrintSales') return;
+    if (activeSection !== 'invoicePrintActivation') return;
     if (invoicePrintAdminAgentId) return;
     const first = invoiceAgentsForPrint[0]?.id;
     if (first) setInvoicePrintAdminAgentId(first);
@@ -2089,17 +2088,6 @@ function SettingsPage() {
           {canInvoicePrintSettings && activeSection === 'invoicePrintActivation' && (
             <InvoicePrintTemplateSettings
               variant="activation"
-              agentId={isAdmin ? null : myAgent?.id ?? null}
-              isAdmin={isAdmin}
-              agents={invoiceAgentsForPrint}
-              adminAgentId={invoicePrintAdminAgentId}
-              onAdminAgentIdChange={setInvoicePrintAdminAgentId}
-            />
-          )}
-
-          {canInvoicePrintSettings && activeSection === 'invoicePrintSales' && (
-            <InvoicePrintTemplateSettings
-              variant="sales"
               agentId={isAdmin ? null : myAgent?.id ?? null}
               isAdmin={isAdmin}
               agents={invoiceAgentsForPrint}

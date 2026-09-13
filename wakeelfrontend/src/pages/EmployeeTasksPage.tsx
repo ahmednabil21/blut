@@ -517,8 +517,7 @@ const EmployeeTasksPage: React.FC = () => {
     user?.role === UserRole.Admin ||
     user?.role === UserRole.Agent ||
     user?.role === UserRole.SubAgent ||
-    (user?.role === UserRole.Employee &&
-      (!!user?.canManageEmployeeTasks || !!user?.canManageMaterialsAndSales));
+    (user?.role === UserRole.Employee && !!user?.canManageEmployeeTasks);
   const isAdmin = user?.role === UserRole.Admin;
 
   const [page, setPage] = useState(1);

@@ -582,23 +582,12 @@ const DashboardPage: React.FC = () => {
         color: '#14b8a6',
       },
     ];
-    if (user?.role !== UserRole.Employee || user?.canManageMaterialsAndSales) {
-      rows.push({
-        id: 'materials',
-        label: 'مبيعات المواد',
-        value: Number(stats?.totalMaterialSales ?? 0) || 0,
-        color: '#f43f5e',
-      });
-    }
     return rows;
   }, [
     stats?.incomingAmount,
     stats?.totalActivationProfit,
     stats?.totalProfitAmount,
-    stats?.totalMaterialSales,
     debtsStats?.totalDebtAmount,
-    user?.role,
-    user?.canManageMaterialsAndSales,
   ]);
 
   const mainAgentSubscriberChartItems = useMemo(
@@ -626,7 +615,6 @@ const DashboardPage: React.FC = () => {
   const handleFinancialChartClick = (id: string) => {
     if (id === 'incoming') handleIncomingClick();
     else if (id === 'debts') handleDebtsClick();
-    else if (id === 'materials') navigate('/admin/materials/disbursed');
   };
 
   const handleMainAgentSubscriberChartClick = (id: string) => {
