@@ -1,6 +1,7 @@
 import html2canvas from 'html2canvas';
 import { KEYUTIL, KJUR, stob64, hextorstr } from 'jsrsasign';
 import qz from 'qz-tray';
+import { QZ_CERTIFICATE_PEM } from '../qz/certificate';
 import { QZ_PRIVATE_KEY_PEM } from '../qz/privateKey';
 
 /** اسم الطابعة الموحّد لدى الوكلاء (QZ Tray) */
@@ -17,20 +18,13 @@ const PRINT_PX_PER_MM = 8;
 let connectPromise: Promise<void> | null = null;
 let securityConfigured = false;
 
-function certificateUrl(): string {
-  const base = (process.env.PUBLIC_URL || '').replace(/\/$/, '');
-  return `${base}/qz/digital-certificate.txt`;
-}
-
 function configureQzSecurity(): void {
   if (securityConfigured) return;
   securityConfigured = true;
 
-  qz.security.setCertificatePromise((resolve, reject) => {
-    fetch(certificateUrl(), { cache: 'no-store' })
-      .then((res) => (res.ok ? res.text() : Promise.reject(new Error('QZ_CERT_FETCH_FAILED'))))
-      .then((cert) => resolve(cert))
-      .catch((err) => reject(err));
+  // شهادة مضمّنة — لا تعتمد على مسار URL (يمنع Signature بدون شهادة مطابقة)
+  qz.security.setCertificatePromise((resolve) => {
+    resolve(QZ_CERTIFICATE_PEM);
   });
 
   qz.security.setSignatureAlgorithm('SHA512');
