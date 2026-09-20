@@ -6,6 +6,7 @@ import { useDigits } from '../contexts/DigitsContext';
 import { apiService, ApiService } from '../services/api';
 import { showError, showSuccess } from '../utils/notifications';
 import { saveCustomerInvoiceCashReceiptPdf } from '../utils/customerCashReceiptPrint';
+import { printHtmlSilentOrDialog } from '../utils/qzSilentPrint';
 import {
   Agent,
   CustomerInvoiceCustomerCreateDto,
@@ -72,7 +73,7 @@ function buildCustomerInvoicePrintHtml(
     : '';
 
   const styles = `
-            * { box-sizing: border-box; }
+            * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             body {
               font-family: Arial, sans-serif;
               margin: 0;
@@ -80,13 +81,13 @@ function buildCustomerInvoicePrintHtml(
               background: white;
               color: #333;
               direction: rtl;
-              font-size: 7px;
-              line-height: 1.2;
+              font-size: 11px;
+              line-height: 1.35;
             }
             .receipt {
-              width: 46mm;
-              max-width: 46mm;
-              padding: 1.5mm;
+              width: 72.1mm;
+              max-width: 72.1mm;
+              padding: 2mm 2.5mm 3mm;
               background: white;
               border: none;
             }
@@ -96,29 +97,23 @@ function buildCustomerInvoicePrintHtml(
               padding-bottom: 2mm;
               margin-bottom: 2mm;
             }
-            .header h1 { margin: 0; font-size: 9px; font-weight: bold; }
-            .header p { margin: 1px 0; font-size: 6px; }
+            .header h1 { margin: 0; font-size: 13px; font-weight: bold; }
+            .header p { margin: 1px 0; font-size: 10px; }
             .section { margin-bottom: 2mm; }
-            .section h3 { margin: 0 0 1mm 0; font-size: 7px; border-bottom: 1px solid #ddd; padding-bottom: 0.5mm; }
-            .info-row { display: flex; justify-content: space-between; margin: 0.5mm 0; padding: 0; font-size: 6px; gap: 1mm; }
+            .section h3 { margin: 0 0 1mm 0; font-size: 11px; border-bottom: 1px solid #ddd; padding-bottom: 0.5mm; }
+            .info-row { display: flex; justify-content: space-between; margin: 0.5mm 0; padding: 0; font-size: 10px; gap: 1mm; }
             .info-row:nth-child(even) { background: #f5f5f5; }
             .label { font-weight: bold; flex-shrink: 0; }
             .value { text-align: left; word-break: break-word; }
             .pricing { background: #eee; padding: 1.5mm; border-radius: 1px; margin: 1.5mm 0; }
             .pricing .info-row { margin: 0.3mm 0; }
-            .notes-text { margin: 0; font-size: 6px; white-space: pre-wrap; word-break: break-word; }
-            .footer { text-align: center; margin-top: 2mm; padding-top: 1mm; border-top: 1px solid #ddd; font-size: 5px; }
+            .notes-text { margin: 0; font-size: 10px; white-space: pre-wrap; word-break: break-word; }
+            .footer { text-align: center; margin-top: 2mm; padding-top: 1mm; border-top: 1px solid #ddd; font-size: 9px; }
             .footer p { margin: 0.5px 0; }
             @media print {
-              @page { size: 50mm 80mm; margin: 1mm; }
-              body { margin: 0; padding: 0; width: 50mm; min-height: 80mm; max-width: 50mm; overflow: hidden; font-size: 6px; }
-              .receipt { width: 48mm; max-width: 48mm; padding: 1mm; font-size: 6px; }
-              .header h1 { font-size: 8px; }
-              .header p { font-size: 5px; }
-              .section h3 { font-size: 6px; }
-              .info-row { font-size: 5px; }
-              .pricing { padding: 1mm; }
-              .footer { font-size: 5px; margin-top: 1mm; }
+              @page { size: 80mm 297mm; margin: 1mm; }
+              body { margin: 0; padding: 0; width: 72.1mm; max-width: 72.1mm; }
+              .receipt { width: 72.1mm; max-width: 72.1mm; padding: 2mm; }
             }
   `;
 
@@ -1362,26 +1357,18 @@ const CustomerInvoicesPage: React.FC = () => {
     deleteInvoiceMutation.mutate({ customerId, invoiceId: inv.id });
   };
 
-  const handlePrintInvoice = (
+  const handlePrintInvoice = async (
     inv: CustomerInvoiceRecordDto,
     cust: Pick<CustomerInvoiceCustomerDto, 'customerName' | 'phoneNumber' | 'address' | 'customerType'>
   ) => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      showError('طباعة', 'تعذّر فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة.');
-      return;
-    }
     const ct = CUSTOMER_TYPE_LABELS[Number(cust.customerType)] ?? String(cust.customerType);
     const pm = PAYMENT_METHOD_LABELS[Number(inv.paymentMethod)] ?? String(inv.paymentMethod);
     const html = buildCustomerInvoicePrintHtml(inv, cust, formatDate, formatNumber, ct, pm);
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.onload = () => {
-      setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-      }, 400);
-    };
+    try {
+      await printHtmlSilentOrDialog(html, { jobName: 'Customer Invoice' });
+    } catch {
+      showError('طباعة', 'تعذّر إرسال الطباعة. تأكد أن QZ Tray يعمل أو اسمح بالنوافذ المنبثقة.');
+    }
   };
 
   const accessDeniedMessage = useMemo(() => {
@@ -2213,7 +2200,7 @@ const CustomerInvoicesPage: React.FC = () => {
                                       <button
                                         type="button"
                                         onClick={() =>
-                                          handlePrintInvoice(inv, {
+                                          void handlePrintInvoice(inv, {
                                             customerName: detailForModal.customerName,
                                             phoneNumber: detailForModal.phoneNumber,
                                             address: detailForModal.address,

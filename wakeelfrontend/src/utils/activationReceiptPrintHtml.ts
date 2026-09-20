@@ -202,56 +202,12 @@ export async function embedActivationReceiptStaticImages(
 }
 
 /**
- * طباعة مباشرة عبر iframe خارج الشاشة — بدون فتح تبويب/نافذة تعرض ملف الفاتورة.
- * يُرسل الأمر إلى مربع حوار الطباعة (أو للطابعة الافتراضية عند تفعيل الطباعة الصامتة في المتصفح).
- * مناسب لطابعات POS الحرارية مثل CP-Q5B (80mm).
+ * طباعة مباشرة: QZ Tray (صامتة على CP-Q3) مع احتياطي حوار المتصفح.
+ * مقاس الورق: 80 × 297 مم (عرض قابل للطباعة ≈ 72.1 مم).
  */
 export async function openActivationReceiptPrintWindow(html: string): Promise<void> {
-  const iframe = document.createElement('iframe');
-  iframe.setAttribute('title', 'activation-receipt-print');
-  iframe.setAttribute('aria-hidden', 'true');
-  iframe.style.position = 'fixed';
-  iframe.style.left = '-10000px';
-  iframe.style.top = '0';
-  iframe.style.width = '80mm';
-  iframe.style.height = '120mm';
-  iframe.style.border = '0';
-  iframe.style.opacity = '0';
-  iframe.style.pointerEvents = 'none';
-  iframe.style.zIndex = '-1';
-  document.body.appendChild(iframe);
-
-  const printDoc = iframe.contentDocument;
-  const printWin = iframe.contentWindow;
-  if (!printDoc || !printWin) {
-    document.body.removeChild(iframe);
-    throw new Error('PRINT_FRAME_FAILED');
-  }
-
-  printDoc.open();
-  printDoc.write(html);
-  printDoc.close();
-
-  await waitForDocumentImages(printDoc);
-  await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-
-  const cleanup = () => {
-    if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-  };
-
-  try {
-    printWin.focus();
-    printWin.print();
-  } catch {
-    cleanup();
-    throw new Error('PRINT_FAILED');
-  }
-
-  if (typeof printWin.onafterprint !== 'undefined') {
-    printWin.onafterprint = cleanup;
-  } else {
-    setTimeout(cleanup, 1500);
-  }
+  const { printHtmlSilentOrDialog } = await import('./qzSilentPrint');
+  await printHtmlSilentOrDialog(html, { jobName: 'Activation Receipt' });
 }
 
 function escapeHtml(s: string): string {
@@ -714,7 +670,7 @@ export function buildActivationReceiptPrintHtml(
     }
 
     @page {
-      size: 80mm auto;
+      size: 80mm 297mm;
       margin: 1mm;
     }
 
@@ -734,8 +690,8 @@ export function buildActivationReceiptPrintHtml(
     }
 
     .paper {
-      width: 80mm;
-      max-width: 80mm;
+      width: 72.1mm;
+      max-width: 72.1mm;
       background: #fff;
       padding: 2mm 2.5mm 3mm;
       box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
