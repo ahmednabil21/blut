@@ -24,6 +24,7 @@
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
+    "lna": "file:vendor/lna",
     "lottie-react": "^2.4.1",
     "lucide-react": "^0.545.0",
     "qrcode": "^1.5.4",
