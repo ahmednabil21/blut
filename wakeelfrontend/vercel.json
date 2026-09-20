@@ -32,6 +32,10 @@
       "destination": "/wakeel.mobileconfig"
     },
     {
+      "source": "/wakeel/qz/:path*",
+      "destination": "/qz/:path*"
+    },
+    {
       "source": "/wakeel/:path*",
       "destination": "/index.html"
     },

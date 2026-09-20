@@ -659,9 +659,10 @@ export function buildActivationReceiptPrintHtml(
   <meta charset="UTF-8">
   <meta name="viewport" content="width=80mm, initial-scale=1">
   <title>وصل تفعيل — ${escapeHtml(receipt.receiptNumber)}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* خطوط النظام أولاً لضمان تشكيل العربية عند الالتقاط/الطباعة */
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@500;600;700&display=swap');
+  </style>
   <style>
     * {
       box-sizing: border-box;
@@ -676,7 +677,7 @@ export function buildActivationReceiptPrintHtml(
 
     body {
       margin: 0;
-      font-family: "Noto Naskh Arabic", Tahoma, "Segoe UI", Arial, sans-serif;
+      font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif;
       font-size: 11px;
       line-height: 1.45;
       color: #000;

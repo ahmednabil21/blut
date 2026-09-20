@@ -39,6 +39,17 @@ declare module 'qz-tray' {
       create: (printer: string, options?: PrintConfigOptions) => PrintConfig;
     };
     print: (config: PrintConfig, data: PixelPrintData[]) => Promise<void>;
+    security: {
+      setCertificatePromise: (
+        handler: (resolve: (cert: string) => void, reject: (err?: unknown) => void) => void
+      ) => void;
+      setSignatureAlgorithm: (algorithm: string) => void;
+      setSignaturePromise: (
+        factory: (
+          toSign: string
+        ) => (resolve: (signature: string) => void, reject: (err?: unknown) => void) => void
+      ) => void;
+    };
   }
 
   const qz: QzApi;

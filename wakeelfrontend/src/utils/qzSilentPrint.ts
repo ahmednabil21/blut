@@ -1,4 +1,7 @@
+import html2canvas from 'html2canvas';
+import { KEYUTIL, KJUR, stob64, hextorstr } from 'jsrsasign';
 import qz from 'qz-tray';
+import { QZ_PRIVATE_KEY_PEM } from '../qz/privateKey';
 
 /** اسم الطابعة الموحّد لدى الوكلاء (QZ Tray) */
 export const QZ_DEFAULT_PRINTER_NAME = 'CP-Q3';
@@ -8,9 +11,46 @@ export const QZ_PAGE_WIDTH_MM = 80;
 export const QZ_PAGE_HEIGHT_MM = 297;
 export const QZ_PRINTABLE_WIDTH_MM = 72.1;
 
+/** ~203 DPI للطابعات الحرارية الشائعة */
+const PRINT_PX_PER_MM = 8;
+
 let connectPromise: Promise<void> | null = null;
+let securityConfigured = false;
+
+function certificateUrl(): string {
+  const base = (process.env.PUBLIC_URL || '').replace(/\/$/, '');
+  return `${base}/qz/digital-certificate.txt`;
+}
+
+function configureQzSecurity(): void {
+  if (securityConfigured) return;
+  securityConfigured = true;
+
+  qz.security.setCertificatePromise((resolve, reject) => {
+    fetch(certificateUrl(), { cache: 'no-store' })
+      .then((res) => (res.ok ? res.text() : Promise.reject(new Error('QZ_CERT_FETCH_FAILED'))))
+      .then((cert) => resolve(cert))
+      .catch((err) => reject(err));
+  });
+
+  qz.security.setSignatureAlgorithm('SHA512');
+  qz.security.setSignaturePromise((toSign: string) => {
+    return (resolve, reject) => {
+      try {
+        const pk = KEYUTIL.getKey(QZ_PRIVATE_KEY_PEM);
+        const sig = new KJUR.crypto.Signature({ alg: 'SHA512withRSA' });
+        sig.init(pk);
+        sig.updateString(toSign);
+        resolve(stob64(hextorstr(sig.sign())));
+      } catch (err) {
+        reject(err);
+      }
+    };
+  });
+}
 
 async function ensureQzConnected(): Promise<void> {
+  configureQzSecurity();
   if (qz.websocket.isActive()) return;
   if (!connectPromise) {
     connectPromise = qz.websocket
@@ -50,8 +90,107 @@ async function resolvePrinterName(preferred?: string): Promise<string> {
   throw new Error('QZ_NO_PRINTER');
 }
 
+function waitForImages(doc: Document): Promise<void> {
+  const images = Array.from(doc.images || []);
+  return Promise.all(
+    images.map(
+      (img) =>
+        img.complete
+          ? Promise.resolve()
+          : new Promise<void>((resolve) => {
+              img.onload = () => resolve();
+              img.onerror = () => resolve();
+            })
+    )
+  ).then(() => undefined);
+}
+
 /**
- * طباعة HTML صامتة عبر QZ Tray على CP-Q3 (أو الافتراضية إن لم تُوجد).
+ * يرندر HTML في المتصفح (تشكيل عربي صحيح) ثم يلتقطه كـ PNG base64.
+ * QZ HTML rasterizer لا يشكّل الحروف العربية؛ الصورة تحل المشكلة.
+ */
+async function renderHtmlToPngBase64(html: string): Promise<string> {
+  const widthPx = Math.round(QZ_PRINTABLE_WIDTH_MM * PRINT_PX_PER_MM);
+  const host = document.createElement('div');
+  host.setAttribute('aria-hidden', 'true');
+  host.style.cssText = [
+    'position:fixed',
+    'left:-10000px',
+    'top:0',
+    `width:${widthPx}px`,
+    'background:#ffffff',
+    'opacity:1',
+    'pointer-events:none',
+    'z-index:-1',
+  ].join(';');
+
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('title', 'qz-arabic-render');
+  iframe.style.cssText = `border:0;width:${widthPx}px;height:400px;overflow:hidden;background:#fff;`;
+  host.appendChild(iframe);
+  document.body.appendChild(host);
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      iframe.onload = () => resolve();
+      iframe.onerror = () => reject(new Error('PRINT_FRAME_FAILED'));
+      iframe.srcdoc = html;
+    });
+
+    const doc = iframe.contentDocument;
+    if (!doc?.body) throw new Error('PRINT_FRAME_FAILED');
+
+    await waitForImages(doc);
+    if (doc.fonts?.ready) {
+      try {
+        await Promise.race([
+          doc.fonts.ready,
+          new Promise<void>((r) => setTimeout(r, 2500)),
+        ]);
+      } catch {
+        /* تجاهل */
+      }
+    }
+    // وقت إضافي لتشكيل الخطوط العربية
+    await new Promise<void>((r) => setTimeout(r, 200));
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+    const target =
+      (doc.querySelector('.paper') as HTMLElement | null) ||
+      (doc.querySelector('.receipt') as HTMLElement | null) ||
+      doc.body;
+
+    const contentHeight = Math.max(target.scrollHeight, target.offsetHeight, doc.body.scrollHeight, 120);
+    iframe.style.height = `${contentHeight + 24}px`;
+
+    const canvas = await html2canvas(target, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      imageTimeout: 5000,
+      width: Math.max(target.scrollWidth, widthPx),
+      height: contentHeight,
+      windowWidth: Math.max(target.scrollWidth, widthPx),
+      windowHeight: contentHeight,
+      onclone: (_clonedDoc, element) => {
+        element.style.fontFamily = '"Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif';
+        element.style.direction = 'rtl';
+      },
+    });
+
+    const dataUrl = canvas.toDataURL('image/png');
+    const base64 = dataUrl.replace(/^data:image\/png;base64,/i, '');
+    if (!base64) throw new Error('QZ_RENDER_EMPTY');
+    return base64;
+  } finally {
+    if (host.parentNode) host.parentNode.removeChild(host);
+  }
+}
+
+/**
+ * طباعة صامتة عبر QZ: صورة من المتصفح للحفاظ على اتصال الحروف العربية.
  */
 export async function printHtmlViaQz(
   html: string,
@@ -59,6 +198,7 @@ export async function printHtmlViaQz(
 ): Promise<void> {
   await ensureQzConnected();
   const printer = await resolvePrinterName(options?.printerName);
+  const imageBase64 = await renderHtmlToPngBase64(html);
 
   const config = qz.configs.create(printer, {
     size: { width: QZ_PAGE_WIDTH_MM, height: QZ_PAGE_HEIGHT_MM },
@@ -75,9 +215,9 @@ export async function printHtmlViaQz(
   await qz.print(config, [
     {
       type: 'pixel',
-      format: 'html',
-      flavor: 'plain',
-      data: html,
+      format: 'image',
+      flavor: 'base64',
+      data: imageBase64,
       options: {
         pageWidth: QZ_PRINTABLE_WIDTH_MM,
       },
@@ -112,18 +252,7 @@ export async function printHtmlViaBrowserDialog(html: string): Promise<void> {
   printDoc.write(html);
   printDoc.close();
 
-  const images = Array.from(printDoc.images || []);
-  await Promise.all(
-    images.map(
-      (img) =>
-        img.complete
-          ? Promise.resolve()
-          : new Promise<void>((resolve) => {
-              img.onload = () => resolve();
-              img.onerror = () => resolve();
-            })
-    )
-  );
+  await waitForImages(printDoc);
   await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
   const cleanup = () => {
