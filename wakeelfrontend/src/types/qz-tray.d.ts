@@ -12,7 +12,7 @@ declare module 'qz-tray' {
   };
 
   type PrintConfigOptions = {
-    size?: { width: number; height: number } | null;
+    size?: { width?: number; height?: number } | null;
     units?: 'in' | 'cm' | 'mm';
     margins?: number | { top?: number; right?: number; bottom?: number; left?: number };
     scaleContent?: boolean;

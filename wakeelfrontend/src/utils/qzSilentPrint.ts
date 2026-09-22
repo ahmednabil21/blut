@@ -7,10 +7,11 @@ import { QZ_PRIVATE_KEY_PEM } from '../qz/privateKey';
 /** اسم الطابعة الموحّد لدى الوكلاء (QZ Tray) */
 export const QZ_DEFAULT_PRINTER_NAME = 'CP-Q3';
 
-/** مقاس الورق الحراري المطلوب: 80 (عرض قابل للطباعة ≈ 72.1) × 297 مم */
+/** مقاس الورق الحراري: 80 مم عرضاً (عرض الطباعة الفعلي على الرول) */
 export const QZ_PAGE_WIDTH_MM = 80;
 export const QZ_PAGE_HEIGHT_MM = 297;
-export const QZ_PRINTABLE_WIDTH_MM = 72.1;
+/** نستخدم كامل عرض الرول مع هامش داخلي صغير داخل الـ HTML */
+export const QZ_PRINTABLE_WIDTH_MM = 80;
 
 /** ~203 DPI للطابعات الحرارية الشائعة */
 const PRINT_PX_PER_MM = 8;
@@ -104,7 +105,7 @@ function waitForImages(doc: Document): Promise<void> {
  * QZ HTML rasterizer لا يشكّل الحروف العربية؛ الصورة تحل المشكلة.
  */
 async function renderHtmlToPngBase64(html: string): Promise<string> {
-  const widthPx = Math.round(QZ_PRINTABLE_WIDTH_MM * PRINT_PX_PER_MM);
+  const widthPx = Math.round(QZ_PAGE_WIDTH_MM * PRINT_PX_PER_MM);
   const host = document.createElement('div');
   host.setAttribute('aria-hidden', 'true');
   host.style.cssText = [
@@ -134,6 +135,13 @@ async function renderHtmlToPngBase64(html: string): Promise<string> {
     const doc = iframe.contentDocument;
     if (!doc?.body) throw new Error('PRINT_FRAME_FAILED');
 
+    // اجعل الجسم بعرض الرول بالكامل بدون توسيط يترك فراغاً في اللقطة
+    doc.body.style.margin = '0';
+    doc.body.style.padding = '0';
+    doc.body.style.display = 'block';
+    doc.body.style.width = `${QZ_PAGE_WIDTH_MM}mm`;
+    doc.body.style.background = '#ffffff';
+
     await waitForImages(doc);
     if (doc.fonts?.ready) {
       try {
@@ -145,7 +153,6 @@ async function renderHtmlToPngBase64(html: string): Promise<string> {
         /* تجاهل */
       }
     }
-    // وقت إضافي لتشكيل الخطوط العربية
     await new Promise<void>((r) => setTimeout(r, 200));
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
@@ -154,8 +161,15 @@ async function renderHtmlToPngBase64(html: string): Promise<string> {
       (doc.querySelector('.receipt') as HTMLElement | null) ||
       doc.body;
 
-    const contentHeight = Math.max(target.scrollHeight, target.offsetHeight, doc.body.scrollHeight, 120);
-    iframe.style.height = `${contentHeight + 24}px`;
+    target.style.width = `${QZ_PAGE_WIDTH_MM}mm`;
+    target.style.maxWidth = `${QZ_PAGE_WIDTH_MM}mm`;
+    target.style.margin = '0';
+    target.style.boxSizing = 'border-box';
+
+    const contentHeight = Math.max(target.scrollHeight, target.offsetHeight, 120);
+    const contentWidth = Math.max(target.scrollWidth, target.offsetWidth, widthPx);
+    iframe.style.height = `${contentHeight + 16}px`;
+    iframe.style.width = `${contentWidth}px`;
 
     const canvas = await html2canvas(target, {
       scale: 2,
@@ -164,15 +178,25 @@ async function renderHtmlToPngBase64(html: string): Promise<string> {
       backgroundColor: '#ffffff',
       logging: false,
       imageTimeout: 5000,
-      width: Math.max(target.scrollWidth, widthPx),
+      // لا نوسّع اللقطة أكبر من المحتوى حتى لا يظهر فراغ أبيض على اليمين
+      width: contentWidth,
       height: contentHeight,
-      windowWidth: Math.max(target.scrollWidth, widthPx),
+      windowWidth: contentWidth,
       windowHeight: contentHeight,
+      x: 0,
+      y: 0,
+      scrollX: 0,
+      scrollY: 0,
       onclone: (_clonedDoc, element) => {
+        element.style.width = `${QZ_PAGE_WIDTH_MM}mm`;
+        element.style.maxWidth = `${QZ_PAGE_WIDTH_MM}mm`;
+        element.style.margin = '0';
+        element.style.boxSizing = 'border-box';
         element.style.fontFamily = '"Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif';
         element.style.direction = 'rtl';
-        element.style.fontWeight = '800';
+        element.style.fontWeight = '700';
         element.style.color = '#000';
+        element.style.background = '#ffffff';
       },
     });
 
@@ -196,8 +220,9 @@ export async function printHtmlViaQz(
   const printer = await resolvePrinterName(options?.printerName);
   const imageBase64 = await renderHtmlToPngBase64(html);
 
+  // عرض 80مم فقط — بدون ارتفاع ثابت حتى لا يُصغَّر الوصل ويترك فراغاً جانبياً
   const config = qz.configs.create(printer, {
-    size: { width: QZ_PAGE_WIDTH_MM, height: QZ_PAGE_HEIGHT_MM },
+    size: { width: QZ_PAGE_WIDTH_MM },
     units: 'mm',
     margins: 0,
     scaleContent: true,
@@ -215,7 +240,8 @@ export async function printHtmlViaQz(
       flavor: 'base64',
       data: imageBase64,
       options: {
-        pageWidth: QZ_PRINTABLE_WIDTH_MM,
+        pageWidth: QZ_PAGE_WIDTH_MM,
+        scaleContent: true,
       },
     },
   ]);

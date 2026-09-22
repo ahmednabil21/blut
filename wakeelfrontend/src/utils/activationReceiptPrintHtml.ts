@@ -678,27 +678,29 @@ export function buildActivationReceiptPrintHtml(
     body {
       margin: 0;
       font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif;
-      font-size: 14px;
-      font-weight: 800;
+      font-size: 13.5px;
+      font-weight: 700;
       line-height: 1.45;
       color: #000;
-      background: #f0f0f0;
+      background: #ffffff;
       direction: rtl;
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
-      padding: 8px 0;
-      display: flex;
-      justify-content: center;
+      padding: 0;
+      display: block;
+      width: 80mm;
+      max-width: 80mm;
     }
 
     .paper {
-      width: 72.1mm;
-      max-width: 72.1mm;
+      width: 80mm;
+      max-width: 80mm;
       background: #fff;
-      padding: 1.5mm 1.2mm 2.5mm;
-      box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+      padding: 2mm 2mm 3mm;
+      box-shadow: none;
       overflow-x: hidden;
       box-sizing: border-box;
+      margin: 0;
     }
 
     .logo {
@@ -733,7 +735,7 @@ export function buildActivationReceiptPrintHtml(
 
     .meta-line {
       font-size: 12px;
-      font-weight: 800;
+      font-weight: 700;
       color: #000;
       line-height: 1.4;
       font-family: Tahoma, Arial, sans-serif;
@@ -743,9 +745,9 @@ export function buildActivationReceiptPrintHtml(
     .credentials {
       flex: 1 1 auto;
       min-width: 0;
-      max-width: 55%;
+      max-width: 58%;
       font-size: 12.5px;
-      font-weight: 800;
+      font-weight: 700;
       line-height: 1.45;
       text-align: right;
       color: #000;
@@ -761,8 +763,8 @@ export function buildActivationReceiptPrintHtml(
       align-items: baseline;
       gap: 0.3rem;
       margin: 2mm 0;
-      font-size: 14px;
-      font-weight: 800;
+      font-size: 13.5px;
+      font-weight: 700;
       color: #000;
       text-align: right;
       max-width: 100%;
@@ -770,7 +772,7 @@ export function buildActivationReceiptPrintHtml(
 
     .field-label {
       flex: 0 0 auto;
-      font-weight: 800;
+      font-weight: 700;
     }
 
     .field-value {
@@ -778,13 +780,13 @@ export function buildActivationReceiptPrintHtml(
       min-width: 0;
       overflow-wrap: anywhere;
       word-break: break-word;
-      font-weight: 800;
+      font-weight: 700;
     }
 
     .activator-row {
       margin: 2.5mm 0 1.5mm;
-      font-size: 13.5px;
-      font-weight: 800;
+      font-size: 13px;
+      font-weight: 700;
       text-align: right;
       color: #000;
       overflow-wrap: anywhere;
@@ -793,8 +795,8 @@ export function buildActivationReceiptPrintHtml(
 
     .legal-note {
       margin: 2.2mm 0;
-      font-size: 10.5px;
-      font-weight: 800;
+      font-size: 10px;
+      font-weight: 700;
       line-height: 1.45;
       text-align: center;
       color: #ff0000;
@@ -804,8 +806,8 @@ export function buildActivationReceiptPrintHtml(
 
     .qr-intro {
       margin: 2mm 0 1.5mm;
-      font-size: 11.5px;
-      font-weight: 800;
+      font-size: 11px;
+      font-weight: 700;
       text-align: center;
       line-height: 1.4;
       color: #000;
@@ -841,8 +843,8 @@ export function buildActivationReceiptPrintHtml(
     }
 
     .contact-line .contact-text {
-      font-size: 12.5px;
-      font-weight: 800;
+      font-size: 12px;
+      font-weight: 700;
       line-height: 1.4;
       overflow-wrap: anywhere;
       word-break: break-word;
@@ -850,8 +852,8 @@ export function buildActivationReceiptPrintHtml(
     }
 
     .contact-line.phone-line .contact-text {
-      font-size: 14px;
-      font-weight: 800;
+      font-size: 13.5px;
+      font-weight: 700;
       direction: ltr;
       unicode-bidi: embed;
       font-family: Tahoma, Arial, sans-serif;
@@ -884,13 +886,15 @@ export function buildActivationReceiptPrintHtml(
         background: #fff;
         padding: 0;
         display: block;
+        width: 80mm;
+        max-width: 80mm;
       }
 
       .paper {
         box-shadow: none;
-        margin: 0 auto;
-        width: 72.1mm;
-        max-width: 72.1mm;
+        margin: 0;
+        width: 80mm;
+        max-width: 80mm;
       }
     }
   </style>
