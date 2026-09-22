@@ -678,15 +678,15 @@ export function buildActivationReceiptPrintHtml(
     body {
       margin: 0;
       font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif;
-      font-size: 12.5px;
-      font-weight: 700;
-      line-height: 1.5;
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.45;
       color: #000;
       background: #f0f0f0;
       direction: rtl;
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
-      padding: 12px 0;
+      padding: 8px 0;
       display: flex;
       justify-content: center;
     }
@@ -695,17 +695,19 @@ export function buildActivationReceiptPrintHtml(
       width: 72.1mm;
       max-width: 72.1mm;
       background: #fff;
-      padding: 2mm 2.5mm 3mm;
+      padding: 1.5mm 1.2mm 2.5mm;
       box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+      overflow-x: hidden;
+      box-sizing: border-box;
     }
 
     .logo {
       display: block;
       width: auto;
-      max-width: 46mm;
-      max-height: 14mm;
+      max-width: 52mm;
+      max-height: 16mm;
       height: auto;
-      margin: 0 auto 1.5mm;
+      margin: 0 auto 1.8mm;
       object-fit: contain;
       object-position: center center;
     }
@@ -715,34 +717,41 @@ export function buildActivationReceiptPrintHtml(
       flex-direction: row;
       justify-content: space-between;
       align-items: flex-start;
-      gap: 2mm;
+      gap: 1.2mm;
       direction: ltr;
-      margin-bottom: 2mm;
+      margin-bottom: 2.2mm;
       width: 100%;
+      max-width: 100%;
     }
 
     .meta-block {
       flex: 1 1 auto;
       min-width: 0;
       text-align: left;
+      overflow-wrap: anywhere;
     }
 
     .meta-line {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 800;
       color: #000;
-      line-height: 1.5;
+      line-height: 1.4;
       font-family: Tahoma, Arial, sans-serif;
+      word-break: break-word;
     }
 
     .credentials {
-      flex: 0 0 auto;
-      font-size: 11.5px;
+      flex: 1 1 auto;
+      min-width: 0;
+      max-width: 55%;
+      font-size: 12.5px;
       font-weight: 800;
-      line-height: 1.55;
+      line-height: 1.45;
       text-align: right;
       color: #000;
-      white-space: nowrap;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
       font-family: Tahoma, "Noto Naskh Arabic", Arial, sans-serif;
     }
 
@@ -750,12 +759,13 @@ export function buildActivationReceiptPrintHtml(
       display: flex;
       flex-wrap: wrap;
       align-items: baseline;
-      gap: 0.35rem;
-      margin: 1.8mm 0;
-      font-size: 12.5px;
+      gap: 0.3rem;
+      margin: 2mm 0;
+      font-size: 14px;
       font-weight: 800;
       color: #000;
       text-align: right;
+      max-width: 100%;
     }
 
     .field-label {
@@ -766,45 +776,53 @@ export function buildActivationReceiptPrintHtml(
     .field-value {
       flex: 1 1 0;
       min-width: 0;
+      overflow-wrap: anywhere;
       word-break: break-word;
       font-weight: 800;
     }
 
     .activator-row {
       margin: 2.5mm 0 1.5mm;
-      font-size: 12px;
+      font-size: 13.5px;
       font-weight: 800;
       text-align: right;
       color: #000;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .legal-note {
-      margin: 2.5mm 0;
-      font-size: 9.5px;
+      margin: 2.2mm 0;
+      font-size: 10.5px;
       font-weight: 800;
-      line-height: 1.55;
+      line-height: 1.45;
       text-align: center;
       color: #ff0000;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .qr-intro {
       margin: 2mm 0 1.5mm;
-      font-size: 10.5px;
+      font-size: 11.5px;
       font-weight: 800;
       text-align: center;
-      line-height: 1.5;
+      line-height: 1.4;
       color: #000;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .qr-block {
       display: flex;
       justify-content: center;
-      margin: 1mm 0 2.5mm;
+      margin: 1mm 0 2.2mm;
     }
 
     .qr-img {
-      width: 20mm;
-      height: 20mm;
+      width: 22mm;
+      height: 22mm;
+      max-width: 100%;
       object-fit: contain;
     }
 
@@ -814,20 +832,25 @@ export function buildActivationReceiptPrintHtml(
       align-items: center;
       justify-content: center;
       gap: 1.2mm;
-      margin: 1.2mm 0;
+      margin: 1.4mm 0;
       text-align: center;
       color: #000;
+      max-width: 100%;
+      padding: 0 0.5mm;
+      box-sizing: border-box;
     }
 
     .contact-line .contact-text {
-      font-size: 11.5px;
+      font-size: 12.5px;
       font-weight: 800;
-      line-height: 1.45;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
       word-break: break-word;
+      min-width: 0;
     }
 
     .contact-line.phone-line .contact-text {
-      font-size: 12.5px;
+      font-size: 14px;
       font-weight: 800;
       direction: ltr;
       unicode-bidi: embed;
@@ -836,10 +859,10 @@ export function buildActivationReceiptPrintHtml(
     }
 
     .inline-icon {
-      width: 3.2mm;
-      height: 3.2mm;
-      min-width: 3.2mm;
-      min-height: 3.2mm;
+      width: 3.5mm;
+      height: 3.5mm;
+      min-width: 3.5mm;
+      min-height: 3.5mm;
       flex-shrink: 0;
       fill: #000;
       display: block;
@@ -847,11 +870,13 @@ export function buildActivationReceiptPrintHtml(
 
     .footer-legal {
       margin-top: 2mm;
-      font-size: 8px;
+      font-size: 9px;
       font-weight: 700;
       text-align: center;
       color: #444;
       line-height: 1.35;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     @media print {
@@ -864,8 +889,8 @@ export function buildActivationReceiptPrintHtml(
       .paper {
         box-shadow: none;
         margin: 0 auto;
-        width: 80mm;
-        max-width: 80mm;
+        width: 72.1mm;
+        max-width: 72.1mm;
       }
     }
   </style>
