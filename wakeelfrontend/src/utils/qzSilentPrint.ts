@@ -171,6 +171,8 @@ async function renderHtmlToPngBase64(html: string): Promise<string> {
       onclone: (_clonedDoc, element) => {
         element.style.fontFamily = '"Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif';
         element.style.direction = 'rtl';
+        element.style.fontWeight = '800';
+        element.style.color = '#000';
       },
     });
 

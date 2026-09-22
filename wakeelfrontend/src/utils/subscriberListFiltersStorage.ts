@@ -22,6 +22,14 @@ export interface SubscriberListFiltersState {
   appliedExpirationFromDate: string;
   appliedExpirationToDate: string;
   currentPage: number;
+  pageSize: number;
+}
+
+const ALLOWED_PAGE_SIZES = [10, 50, 100] as const;
+
+function normalizePageSize(raw: unknown): number {
+  const n = Number(raw);
+  return (ALLOWED_PAGE_SIZES as readonly number[]).includes(n) ? n : 10;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -57,6 +65,7 @@ export function loadSubscriberListFilters(): SubscriberListFiltersState | null {
       appliedExpirationFromDate: String(parsed.appliedExpirationFromDate ?? ''),
       appliedExpirationToDate: String(parsed.appliedExpirationToDate ?? ''),
       currentPage: Math.max(1, Number(parsed.currentPage) || 1),
+      pageSize: normalizePageSize(parsed.pageSize),
     };
   } catch {
     return null;

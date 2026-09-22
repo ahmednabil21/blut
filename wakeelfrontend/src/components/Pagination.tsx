@@ -9,6 +9,9 @@ interface PaginationProps {
   hasNextPage: boolean;
   hasPreviousPage: boolean;
   onPageChange: (page: number) => void;
+  /** خيارات عدد العناصر في الصفحة (مثل 10 / 50 / 100) */
+  pageSizeOptions?: number[];
+  onPageSizeChange?: (size: number) => void;
   className?: string;
 }
 
@@ -20,6 +23,8 @@ const Pagination: React.FC<PaginationProps> = ({
   hasNextPage,
   hasPreviousPage,
   onPageChange,
+  pageSizeOptions,
+  onPageSizeChange,
   className = ''
 }) => {
   const startItem = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
@@ -63,10 +68,28 @@ const Pagination: React.FC<PaginationProps> = ({
     return result;
   };
 
+  const showPageSize = Array.isArray(pageSizeOptions) && pageSizeOptions.length > 0 && !!onPageSizeChange;
+
   return (
-    <div className={`flex flex-col sm:flex-row items-center justify-between px-3 sm:px-4 py-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 space-y-3 sm:space-y-0 ${className}`}>
-      {/* Items info */}
-      <div className="flex items-center text-xs sm:text-sm text-gray-700 dark:text-gray-300">
+    <div className={`flex flex-col sm:flex-row items-center justify-between gap-3 px-3 sm:px-4 py-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 ${className}`}>
+      {/* Items info + page size */}
+      <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-gray-700 dark:text-gray-300">
+        {showPageSize && (
+          <label className="flex items-center gap-2">
+            <span className="text-gray-600 dark:text-gray-400 whitespace-nowrap">عدد العناصر:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => onPageSizeChange?.(Number(e.target.value))}
+              className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            >
+              {pageSizeOptions!.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <span>
           عرض {startItem} إلى {endItem} من {totalItems} عنصر
         </span>

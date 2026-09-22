@@ -711,7 +711,10 @@ const SubscribersPage: React.FC = () => {
   });
 
   const [currentPage, setCurrentPage] = useState(() => persistedFilters?.currentPage ?? 1);
-  const [pageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(() => {
+    const n = Number(persistedFilters?.pageSize);
+    return n === 10 || n === 50 || n === 100 ? n : 10;
+  });
 
   const isEmployee = user?.role === UserRole.Employee;
   const sasSearchOnlyMode =
@@ -1405,6 +1408,7 @@ const SubscribersPage: React.FC = () => {
       appliedExpirationFromDate,
       appliedExpirationToDate,
       currentPage,
+      pageSize,
     });
   }, [
     searchTerm,
@@ -1428,6 +1432,7 @@ const SubscribersPage: React.FC = () => {
     appliedExpirationFromDate,
     appliedExpirationToDate,
     currentPage,
+    pageSize,
   ]);
 
   const profilesList = React.useMemo(() => {
@@ -2521,6 +2526,12 @@ const SubscribersPage: React.FC = () => {
   
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
+  };
+
+  const handlePageSizeChange = (size: number) => {
+    const next = size === 50 || size === 100 ? size : 10;
+    setPageSize(next);
+    setCurrentPage(1);
   };
 
   const handleClearSearch = () => {
@@ -4486,10 +4497,12 @@ const SubscribersPage: React.FC = () => {
           currentPage={subscribersResponse.currentPage}
           totalPages={subscribersResponse.totalPages}
           totalItems={subscribersResponse.totalItems}
-          pageSize={subscribersResponse.pageSize}
+          pageSize={subscribersResponse.pageSize || pageSize}
           hasNextPage={subscribersResponse.hasNextPage}
           hasPreviousPage={subscribersResponse.hasPreviousPage}
           onPageChange={handlePageChange}
+          pageSizeOptions={[10, 50, 100]}
+          onPageSizeChange={handlePageSizeChange}
         />
       )}
 

@@ -661,7 +661,7 @@ export function buildActivationReceiptPrintHtml(
   <title>وصل تفعيل — ${escapeHtml(receipt.receiptNumber)}</title>
   <style>
     /* خطوط النظام أولاً لضمان تشكيل العربية عند الالتقاط/الطباعة */
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@700;800&display=swap');
   </style>
   <style>
     * {
@@ -678,8 +678,9 @@ export function buildActivationReceiptPrintHtml(
     body {
       margin: 0;
       font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif;
-      font-size: 11px;
-      line-height: 1.45;
+      font-size: 12.5px;
+      font-weight: 700;
+      line-height: 1.5;
       color: #000;
       background: #f0f0f0;
       direction: rtl;
@@ -727,18 +728,18 @@ export function buildActivationReceiptPrintHtml(
     }
 
     .meta-line {
-      font-size: 9.5px;
-      font-weight: 600;
+      font-size: 11px;
+      font-weight: 800;
       color: #000;
-      line-height: 1.45;
+      line-height: 1.5;
       font-family: Tahoma, Arial, sans-serif;
     }
 
     .credentials {
       flex: 0 0 auto;
-      font-size: 10px;
-      font-weight: 600;
-      line-height: 1.5;
+      font-size: 11.5px;
+      font-weight: 800;
+      line-height: 1.55;
       text-align: right;
       color: #000;
       white-space: nowrap;
@@ -750,48 +751,48 @@ export function buildActivationReceiptPrintHtml(
       flex-wrap: wrap;
       align-items: baseline;
       gap: 0.35rem;
-      margin: 1.6mm 0;
-      font-size: 11px;
-      font-weight: 600;
+      margin: 1.8mm 0;
+      font-size: 12.5px;
+      font-weight: 800;
       color: #000;
       text-align: right;
     }
 
     .field-label {
       flex: 0 0 auto;
-      font-weight: 700;
+      font-weight: 800;
     }
 
     .field-value {
       flex: 1 1 0;
       min-width: 0;
       word-break: break-word;
-      font-weight: 600;
+      font-weight: 800;
     }
 
     .activator-row {
       margin: 2.5mm 0 1.5mm;
-      font-size: 10.5px;
-      font-weight: 700;
+      font-size: 12px;
+      font-weight: 800;
       text-align: right;
       color: #000;
     }
 
     .legal-note {
       margin: 2.5mm 0;
-      font-size: 8.5px;
-      font-weight: 700;
-      line-height: 1.5;
+      font-size: 9.5px;
+      font-weight: 800;
+      line-height: 1.55;
       text-align: center;
       color: #ff0000;
     }
 
     .qr-intro {
       margin: 2mm 0 1.5mm;
-      font-size: 9px;
-      font-weight: 600;
+      font-size: 10.5px;
+      font-weight: 800;
       text-align: center;
-      line-height: 1.45;
+      line-height: 1.5;
       color: #000;
     }
 
@@ -819,15 +820,15 @@ export function buildActivationReceiptPrintHtml(
     }
 
     .contact-line .contact-text {
-      font-size: 10px;
-      font-weight: 600;
-      line-height: 1.4;
+      font-size: 11.5px;
+      font-weight: 800;
+      line-height: 1.45;
       word-break: break-word;
     }
 
     .contact-line.phone-line .contact-text {
-      font-size: 11px;
-      font-weight: 700;
+      font-size: 12.5px;
+      font-weight: 800;
       direction: ltr;
       unicode-bidi: embed;
       font-family: Tahoma, Arial, sans-serif;
@@ -846,8 +847,8 @@ export function buildActivationReceiptPrintHtml(
 
     .footer-legal {
       margin-top: 2mm;
-      font-size: 7px;
-      font-weight: 500;
+      font-size: 8px;
+      font-weight: 700;
       text-align: center;
       color: #444;
       line-height: 1.35;
