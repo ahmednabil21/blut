@@ -632,7 +632,7 @@ export function buildActivationReceiptPrintHtml(
     receipt.agentAddress?.trim() ||
     'الحمدانية – شارع الحزام – قرب كنيسة مار بهنام واخته سارة';
   const companyPhones =
-    settings.companyPhones?.trim() || receipt.agentPhone?.trim() || '07723775772';
+    settings.companyPhones?.trim() || receipt.agentPhone?.trim() || '7989';
 
   const logoSrc =
     embeddedImages?.logo?.trim() ||
@@ -807,13 +807,19 @@ export function buildActivationReceiptPrintHtml(
 
     .legal-note {
       margin: 2.2mm 0;
-      font-size: 10px;
-      font-weight: 700;
-      line-height: 1.45;
+      font-size: 11.5px;
+      font-weight: 800;
+      line-height: 1.5;
       text-align: center;
       color: #ff0000;
       overflow-wrap: anywhere;
       word-break: break-word;
+    }
+
+    .legal-note strong {
+      font-weight: 900;
+      font-size: inherit;
+      color: inherit;
     }
 
     .qr-intro {
@@ -930,7 +936,7 @@ export function buildActivationReceiptPrintHtml(
     ${fieldRow('تاريخ انتهاء الاشتراك:', expiryStr || '—')}
     ${fieldRow('طريقة الدفع:', paymentLabel)}
     <div class="activator-row">المفعل : ${escapeHtml(activator || '—')}</div>
-    <div class="legal-note">${escapeHtml(borrowNote)}</div>
+    <div class="legal-note"><strong>${escapeHtml(borrowNote)}</strong></div>
     <div class="qr-intro">للمزيد من المعلومات يمكن الاتصال على الارقام التالية او عبر مسح رمز الـ QR</div>
     <div class="qr-block">
       <img src="${escapeHtml(qrSrc)}" class="qr-img" alt="QR" />
