@@ -6,6 +6,7 @@ import {
   ServiceType,
 } from '../types';
 import { ACTIVATION_RECEIPT_BUNDLED_ASSETS } from '../assets/activation-receipt';
+import { PRINTABLE_WIDTH_MM, thermalReceiptCssVars } from '../config/thermalPaper';
 import { formatDisplayDate } from './formatDisplayDate';
 
 /** ملف في `public/` — شعار ثابت لفاتورة التفعيل (من نموذج الوصل) */
@@ -203,7 +204,7 @@ export async function embedActivationReceiptStaticImages(
 
 /**
  * طباعة مباشرة: QZ Tray (صامتة على CP-Q3) مع احتياطي حوار المتصفح.
- * مقاس الورق: 80 × 297 مم (عرض قابل للطباعة ≈ 72.1 مم).
+ * مقاس الورق من `config/thermalPaper` (افتراضي رول 80مم، محتوى ≈72مم).
  */
 export async function openActivationReceiptPrintWindow(html: string): Promise<void> {
   const { printHtmlSilentOrDialog } = await import('./qzSilentPrint');
@@ -600,7 +601,8 @@ export function enrichActivationPrintPayload(
 }
 
 /**
- * مستند HTML كامل لوصل التفعيل — POS 80mm، خط رسمي أسود.
+ * مستند HTML كامل لوصل التفعيل — POS حراري، خط رسمي أسود.
+ * العرض من PAPER_WIDTH_MM / PRINTABLE_WIDTH_MM (افتراضي 80 / 72).
  */
 export function buildActivationReceiptPrintHtml(
   settings: ActivationInvoicePrintSettingsDto,
@@ -616,6 +618,10 @@ export function buildActivationReceiptPrintHtml(
   }
 ): string {
   const { locale, appOrigin, fallbackOrganizerName, embeddedImages } = opts;
+  const paper = thermalReceiptCssVars(PRINTABLE_WIDTH_MM);
+  const W = paper.printableWidthMm;
+  const rollW = paper.paperWidthMm;
+  const pageH = paper.pageHeightMm;
   const fmtNum = (n: number) => n.toLocaleString(locale);
 
   const borrowNote =
@@ -657,7 +663,7 @@ export function buildActivationReceiptPrintHtml(
 <html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=80mm, initial-scale=1">
+  <meta name="viewport" content="width=${W}mm, initial-scale=1">
   <title>وصل تفعيل — ${escapeHtml(receipt.receiptNumber)}</title>
   <style>
     /* خطوط النظام أولاً لضمان تشكيل العربية عند الالتقاط/الطباعة */
@@ -671,12 +677,19 @@ export function buildActivationReceiptPrintHtml(
     }
 
     @page {
-      size: 80mm 297mm;
-      margin: 1mm;
+      size: ${rollW}mm ${pageH}mm;
+      margin: ${paper.sideMarginMm}mm;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: ${W}mm;
+      max-width: ${W}mm;
+      min-width: ${W}mm;
     }
 
     body {
-      margin: 0;
       font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif;
       font-size: 13.5px;
       font-weight: 700;
@@ -686,15 +699,13 @@ export function buildActivationReceiptPrintHtml(
       direction: rtl;
       -webkit-text-size-adjust: 100%;
       text-size-adjust: 100%;
-      padding: 0;
       display: block;
-      width: 80mm;
-      max-width: 80mm;
     }
 
     .paper {
-      width: 80mm;
-      max-width: 80mm;
+      width: ${W}mm;
+      max-width: ${W}mm;
+      min-width: ${W}mm;
       background: #fff;
       padding: 2mm 2mm 3mm;
       box-shadow: none;
@@ -706,7 +717,7 @@ export function buildActivationReceiptPrintHtml(
     .logo {
       display: block;
       width: auto;
-      max-width: 52mm;
+      max-width: ${Math.min(52, W - 8)}mm;
       max-height: 16mm;
       height: auto;
       margin: 0 auto 1.8mm;
@@ -882,19 +893,22 @@ export function buildActivationReceiptPrintHtml(
     }
 
     @media print {
-      body {
+      html, body {
         background: #fff;
         padding: 0;
+        margin: 0;
         display: block;
-        width: 80mm;
-        max-width: 80mm;
+        width: ${W}mm !important;
+        max-width: ${W}mm !important;
+        min-width: ${W}mm !important;
       }
 
       .paper {
         box-shadow: none;
         margin: 0;
-        width: 80mm;
-        max-width: 80mm;
+        width: ${W}mm !important;
+        max-width: ${W}mm !important;
+        min-width: ${W}mm !important;
       }
     }
   </style>

@@ -3,18 +3,21 @@ import { KEYUTIL, KJUR, stob64, hextorstr } from 'jsrsasign';
 import qz from 'qz-tray';
 import { QZ_CERTIFICATE_PEM } from '../qz/certificate';
 import { QZ_PRIVATE_KEY_PEM } from '../qz/privateKey';
+import {
+  PAPER_HEIGHT_MM,
+  PAPER_SIDE_MARGIN_MM,
+  PAPER_WIDTH_MM,
+  PRINTABLE_WIDTH_MM,
+  thermalContentWidthCssPx,
+} from '../config/thermalPaper';
 
 /** اسم الطابعة الموحّد لدى الوكلاء (QZ Tray) */
 export const QZ_DEFAULT_PRINTER_NAME = 'CP-Q3';
 
-/** مقاس الورق الحراري: 80 مم عرضاً (عرض الطباعة الفعلي على الرول) */
-export const QZ_PAGE_WIDTH_MM = 80;
-export const QZ_PAGE_HEIGHT_MM = 297;
-/** نستخدم كامل عرض الرول مع هامش داخلي صغير داخل الـ HTML */
-export const QZ_PRINTABLE_WIDTH_MM = 80;
-
-/** ~203 DPI للطابعات الحرارية الشائعة */
-const PRINT_PX_PER_MM = 8;
+/** للتوافق مع الاستيرادات القديمة — من الإعداد المركزي */
+export const QZ_PAGE_WIDTH_MM = PAPER_WIDTH_MM;
+export const QZ_PAGE_HEIGHT_MM = PAPER_HEIGHT_MM;
+export const QZ_PRINTABLE_WIDTH_MM = PRINTABLE_WIDTH_MM;
 
 let connectPromise: Promise<void> | null = null;
 let securityConfigured = false;
@@ -100,12 +103,25 @@ function waitForImages(doc: Document): Promise<void> {
   ).then(() => undefined);
 }
 
+function applyThermalContentBox(el: HTMLElement, widthPx: number): void {
+  el.style.width = `${widthPx}px`;
+  el.style.maxWidth = `${widthPx}px`;
+  el.style.minWidth = `${widthPx}px`;
+  el.style.margin = '0';
+  el.style.paddingLeft = el.style.paddingLeft || '';
+  el.style.boxSizing = 'border-box';
+  el.style.background = '#ffffff';
+}
+
 /**
  * يرندر HTML في المتصفح (تشكيل عربي صحيح) ثم يلتقطه كـ PNG base64.
  * QZ HTML rasterizer لا يشكّل الحروف العربية؛ الصورة تحل المشكلة.
+ *
+ * مهم: عرض اللقطة = عرض CSS للمحتوى القابل للطباعة فقط.
+ * سابقاً كان يُفرض 80×8=640px بينما CSS 80mm ≈ 302px → فراغ أبيض ≈ نصف الرول.
  */
 async function renderHtmlToPngBase64(html: string): Promise<string> {
-  const widthPx = Math.round(QZ_PAGE_WIDTH_MM * PRINT_PX_PER_MM);
+  const widthPx = thermalContentWidthCssPx(PRINTABLE_WIDTH_MM);
   const host = document.createElement('div');
   host.setAttribute('aria-hidden', 'true');
   host.style.cssText = [
@@ -135,12 +151,10 @@ async function renderHtmlToPngBase64(html: string): Promise<string> {
     const doc = iframe.contentDocument;
     if (!doc?.body) throw new Error('PRINT_FRAME_FAILED');
 
-    // اجعل الجسم بعرض الرول بالكامل بدون توسيط يترك فراغاً في اللقطة
     doc.body.style.margin = '0';
     doc.body.style.padding = '0';
     doc.body.style.display = 'block';
-    doc.body.style.width = `${QZ_PAGE_WIDTH_MM}mm`;
-    doc.body.style.background = '#ffffff';
+    applyThermalContentBox(doc.body, widthPx);
 
     await waitForImages(doc);
     if (doc.fonts?.ready) {
@@ -161,15 +175,12 @@ async function renderHtmlToPngBase64(html: string): Promise<string> {
       (doc.querySelector('.receipt') as HTMLElement | null) ||
       doc.body;
 
-    target.style.width = `${QZ_PAGE_WIDTH_MM}mm`;
-    target.style.maxWidth = `${QZ_PAGE_WIDTH_MM}mm`;
-    target.style.margin = '0';
-    target.style.boxSizing = 'border-box';
+    applyThermalContentBox(target, widthPx);
 
     const contentHeight = Math.max(target.scrollHeight, target.offsetHeight, 120);
-    const contentWidth = Math.max(target.scrollWidth, target.offsetWidth, widthPx);
+    // التقط بعرض المحتوى فقط — بدون توسيع يضيف فراغاً أبيض على اليمين
     iframe.style.height = `${contentHeight + 16}px`;
-    iframe.style.width = `${contentWidth}px`;
+    iframe.style.width = `${widthPx}px`;
 
     const canvas = await html2canvas(target, {
       scale: 2,
@@ -178,21 +189,18 @@ async function renderHtmlToPngBase64(html: string): Promise<string> {
       backgroundColor: '#ffffff',
       logging: false,
       imageTimeout: 5000,
-      // لا نوسّع اللقطة أكبر من المحتوى حتى لا يظهر فراغ أبيض على اليمين
-      width: contentWidth,
+      width: widthPx,
       height: contentHeight,
-      windowWidth: contentWidth,
+      windowWidth: widthPx,
       windowHeight: contentHeight,
       x: 0,
       y: 0,
       scrollX: 0,
       scrollY: 0,
       onclone: (_clonedDoc, element) => {
-        element.style.width = `${QZ_PAGE_WIDTH_MM}mm`;
-        element.style.maxWidth = `${QZ_PAGE_WIDTH_MM}mm`;
-        element.style.margin = '0';
-        element.style.boxSizing = 'border-box';
-        element.style.fontFamily = '"Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif';
+        applyThermalContentBox(element, widthPx);
+        element.style.fontFamily =
+          '"Segoe UI", Tahoma, "Noto Naskh Arabic", Arial, sans-serif';
         element.style.direction = 'rtl';
         element.style.fontWeight = '700';
         element.style.color = '#000';
@@ -220,12 +228,18 @@ export async function printHtmlViaQz(
   const printer = await resolvePrinterName(options?.printerName);
   const imageBase64 = await renderHtmlToPngBase64(html);
 
-  // عرض 80مم فقط — بدون ارتفاع ثابت حتى لا يُصغَّر الوصل ويترك فراغاً جانبياً
+  // نطبع بعرض المنطقة القابلة للطباعة (مثلاً 72مم على رول 80مم)
+  // scaleContent: false — الصورة أصلاً بعرض المحتوى؛ لا نُصغّر ولا نمدّد
   const config = qz.configs.create(printer, {
-    size: { width: QZ_PAGE_WIDTH_MM },
+    size: { width: PRINTABLE_WIDTH_MM },
     units: 'mm',
-    margins: 0,
-    scaleContent: true,
+    margins: {
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+    },
+    scaleContent: false,
     rasterize: true,
     interpolation: 'nearest-neighbor',
     colorType: 'grayscale',
@@ -240,8 +254,8 @@ export async function printHtmlViaQz(
       flavor: 'base64',
       data: imageBase64,
       options: {
-        pageWidth: QZ_PAGE_WIDTH_MM,
-        scaleContent: true,
+        pageWidth: PRINTABLE_WIDTH_MM,
+        scaleContent: false,
       },
     },
   ]);
@@ -249,14 +263,15 @@ export async function printHtmlViaQz(
 
 /** طباعة عبر مربع حوار المتصفح (iframe مخفي) — احتياطي عند غياب QZ */
 export async function printHtmlViaBrowserDialog(html: string): Promise<void> {
+  const widthPx = thermalContentWidthCssPx(PRINTABLE_WIDTH_MM);
   const iframe = document.createElement('iframe');
   iframe.setAttribute('title', 'silent-print-fallback');
   iframe.setAttribute('aria-hidden', 'true');
   iframe.style.position = 'fixed';
   iframe.style.left = '-10000px';
   iframe.style.top = '0';
-  iframe.style.width = `${QZ_PAGE_WIDTH_MM}mm`;
-  iframe.style.height = `${QZ_PAGE_HEIGHT_MM}mm`;
+  iframe.style.width = `${widthPx}px`;
+  iframe.style.height = `${PAPER_HEIGHT_MM}mm`;
   iframe.style.border = '0';
   iframe.style.opacity = '0';
   iframe.style.pointerEvents = 'none';
@@ -311,4 +326,16 @@ export async function printHtmlSilentOrDialog(
     await printHtmlViaBrowserDialog(html);
     return 'browser';
   }
+}
+
+/** للتشخيص في الكونسول عند الحاجة */
+export function getThermalPrintDebugInfo() {
+  return {
+    paperWidthMm: PAPER_WIDTH_MM,
+    printableWidthMm: PRINTABLE_WIDTH_MM,
+    sideMarginMm: PAPER_SIDE_MARGIN_MM,
+    contentWidthCssPx: thermalContentWidthCssPx(PRINTABLE_WIDTH_MM),
+    note:
+      'كانت المشكلة: التقاط html2canvas بعرض 80*8=640px بينما CSS 80mm≈302px → المحتوى نصف الرول',
+  };
 }
