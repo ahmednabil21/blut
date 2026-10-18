@@ -204,7 +204,8 @@ export async function embedActivationReceiptStaticImages(
 
 /**
  * طباعة مباشرة: QZ Tray (صامتة على CP-Q3) مع احتياطي حوار المتصفح.
- * مقاس الورق من `config/thermalPaper` (افتراضي رول 80مم، محتوى ≈72مم).
+ * مقاس الورق من `config/thermalPaper` (افتراضي رول 80مم، محتوى ≈76مم).
+ * العربية تُطبع كصورة (raster) عبر QZ — ليس ESC/POS text.
  */
 export async function openActivationReceiptPrintWindow(html: string): Promise<void> {
   const { printHtmlSilentOrDialog } = await import('./qzSilentPrint');
@@ -602,7 +603,7 @@ export function enrichActivationPrintPayload(
 
 /**
  * مستند HTML كامل لوصل التفعيل — POS حراري، خط رسمي أسود.
- * العرض من PAPER_WIDTH_MM / PRINTABLE_WIDTH_MM (افتراضي 80 / 72).
+ * العرض من PAPER_WIDTH_MM / PRINTABLE_WIDTH_MM (افتراضي 80 / 76).
  */
 export function buildActivationReceiptPrintHtml(
   settings: ActivationInvoicePrintSettingsDto,
